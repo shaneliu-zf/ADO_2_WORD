@@ -1,0 +1,12 @@
+# 請勿提交機密與本機設定
+secrets/pat.txt
+secrets/config.json
+.env
+
+# 輸出與快取
+output/
+__pycache__/
+*.pyc
+.Python
+.venv/
+venv/

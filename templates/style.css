@@ -1,0 +1,86 @@
+body {
+  font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
+  margin: 24px;
+  color: #222;
+}
+
+h1 {
+  margin-bottom: 8px;
+}
+
+.sub {
+  color: #666;
+  margin-bottom: 24px;
+}
+
+table.meta,
+table.index {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+table.meta th,
+table.meta td,
+table.index th,
+table.index td {
+  border: 1px solid #ddd;
+  padding: 8px 10px;
+  vertical-align: top;
+  text-align: left;
+}
+
+table.meta th,
+table.index th {
+  background: #f4f6f8;
+}
+
+table.meta th {
+  width: 240px;
+}
+
+.html-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.html-body table {
+  border-collapse: collapse;
+  max-width: 100%;
+}
+
+.html-body td,
+.html-body th {
+  border: 1px solid #ccc;
+  padding: 4px 8px;
+}
+
+.html-body p {
+  margin: 0.6em 0;
+}
+
+.html-body strong {
+  font-weight: 700;
+}
+
+.html-body ol,
+.html-body ul {
+  padding-left: 1.4em;
+}
+
+.comment {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.comment header {
+  color: #555;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.empty {
+  color: #999;
+}

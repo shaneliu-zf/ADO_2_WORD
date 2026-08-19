@@ -10,3 +10,6 @@ __pycache__/
 .Python
 .venv/
 venv/
+frontend/node_modules/
+frontend/dist/
+

@@ -27,6 +27,7 @@
 ## 環境
 
 - Python 3.9+
+- Node.js 18+（Vue 前端）
 - 產出 Word 需要：
 
 ```bash
@@ -62,6 +63,7 @@ Bob system prompt：`templates/llm_prompt.txt`
 ADO_2_WORD/
 ├── backend/
 │   ├── app.py                  # 本機預覽 ＋ POST /api/… 丟 JSON
+│   ├── frontend_api.py         # Vue 前端用的 items／pipeline SSE API
 │   ├── pipeline/               # Pipeline 步驟
 │   │   ├── run.py              # run_step／run_from（直接丟 JSON）
 │   │   ├── list_ids.py         # 1/5 WIQL 列出專案全部 Work Item
@@ -77,7 +79,7 @@ ADO_2_WORD/
 │       ├── work_item_parser.py # 讀／解析 fetch 產出的 ADO JSON
 │       ├── paths.py            # 路徑常數
 │       └── config_io.py        # 讀 secrets/config.json
-├── frontend/                   # SPA 前端（待開發）
+├── frontend/                   # Vue SPA（列表、篩選、pipeline、報告編輯）
 ├── docs/
 │   ├── pipeline.drawio           # Draw.io 原檔
 │   └── pipeline-overview.svg     # 匯出的總覽圖
@@ -105,6 +107,7 @@ ADO_2_WORD/
 
 | 類型  | 檔案                                                   | 做什麼                                                |
 | --- | ---------------------------------------------------- | -------------------------------------------------- |
+| 入口  | `backend/app.py`／`backend/frontend_api.py`         | 本機預覽、pipeline JSON、Vue 前端 API                    |
 | 步驟  | `backend/pipeline/list_ids.py`                       | 列出專案全部 Work Item（ID、標題、類型、狀態）             |
 | 步驟  | `backend/pipeline/fetch.py`                          | 抓 ADO、下載圖、存 JSON                                   |
 | 步驟  | `backend/pipeline/group.py`                          | 讀 relations，Related 直接合併                             |
@@ -118,6 +121,7 @@ ADO_2_WORD/
 | 共用  | `backend/utils/work_item_parser.py`                  | 從 ADO JSON 抽欄位、Redmine、Related ID                  |
 | 設定  | `backend/utils/paths.py`／`backend/utils/config_io.py` | 路徑與設定檔                                           |
 | 資源  | `templates/`                                         | Word／預覽頁／CSS 樣板                                   |
+| 前端  | `frontend/`                                          | Vue 列表、篩選、pipeline、報告編輯                         |
 | 資源  | `secrets/`                                           | PAT、Bob key                                        |
 | 產出  | `output/ado/`、`output/json/`、`output/report_*.docx` | 中間產物與最終 Word                                       |
 
@@ -126,13 +130,19 @@ ADO_2_WORD/
 
 ## 使用
 
-在專案根目錄執行。先開預覽伺服器（也提供 API）：
+先開後端（Flask，port 5000），再開 Vue 前端（port 5173）。Vite 會把 `/api`、`/static` 轉到後端。
 
 ```bash
 python3 -m backend.app
 ```
 
-瀏覽器開 http://127.0.0.1:5000/ ：左邊是目前的 ADO，右邊是五個步驟與「下一步」（每次只跑一步、處理勾選的 Issue）。
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+瀏覽器開 http://127.0.0.1:5173/ 。http://127.0.0.1:5000/ 仍是原本的預覽頁。
 
 ### Python 函式
 
@@ -240,7 +250,7 @@ curl -s -X POST http://127.0.0.1:5000/api/fetch \
 | ADO 主旨  | `System.Title`                                      |
 | 測試環境    | 固定 `QAS`                                            |
 | Site    | `SIT-1` → `US-1`，`SIT-2` → `US-2`                   |
-| 測試日期    | 變更歷史最後一次離開 `Testing` 的日期（多單用「、」分隔） |
+| 測試日期    | 離開 `Testing` 的日期；沒進過 Testing 但已 Done 則用進入 Done 那天（多單用「、」分隔，同一天也各列一次） |
 | 測試人員    | 變更歷史最後一次把狀態改成 `Testing` 的操作者              |
 | 審核人員    | 空                                                   |
 | 測試結果    | `System.State`                                      |

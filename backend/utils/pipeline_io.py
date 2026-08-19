@@ -8,6 +8,19 @@ import json
 import sys
 from typing import Any
 
+_log_sinks: list[Callable[[str], None]] = []
+
+
+def add_log_sink(callback: Callable[[str], None]) -> None:
+    _log_sinks.append(callback)
+
+
+def remove_log_sink(callback: Callable[[str], None]) -> None:
+    try:
+        _log_sinks.remove(callback)
+    except ValueError:
+        pass
+
 
 def read_pipeline_json() -> Any:
     text = sys.stdin.read().strip()
@@ -78,7 +91,14 @@ def write_pipeline_json(payload: Any) -> None:
 
 
 def log(message: str = "") -> None:
-    print(message, file=sys.stderr)
+    print(message, file=sys.stderr, flush=True)
+    for sink in list(_log_sinks):
+        try:
+            sink(message)
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
 
 
 def log_stage(title: str) -> None:

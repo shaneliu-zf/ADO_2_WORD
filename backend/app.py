@@ -3,11 +3,13 @@
 
 from flask import Flask, jsonify, request, send_from_directory
 
+from backend.frontend_api import bp as frontend_bp
 from backend.pipeline import STEPS, run_from, run_step
 from backend.utils.paths import ADO_DIR, STYLE_PATH, VIEWER_HTML_PATH
 from backend.utils.report_schema import find_report, list_report_ids
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=None)
+app.register_blueprint(frontend_bp)
 
 
 def _json_error(exc: Exception, status: int = 400):
@@ -77,7 +79,7 @@ def style():
     return send_from_directory(STYLE_PATH.parent, STYLE_PATH.name)
 
 
-@app.route("/<path:filename>")
+@app.route("/<path:filename>", methods=["GET"])
 def ado_file(filename: str):
     if not ADO_DIR.exists():
         return ("尚未抓取 ADO", 404)
@@ -85,4 +87,4 @@ def ado_file(filename: str):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000, threaded=True)

@@ -1,0 +1,29 @@
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  color: #222;
+  font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
+}
+
+:root,
+:root[class],
+html {
+  --p-font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
+}
+
+body,
+.p-component,
+.p-button,
+.p-inputtext,
+.p-datatable,
+.p-dialog,
+.p-toast,
+.p-multiselect-overlay .p-multiselect-list-container,
+.p-multiselect-overlay .p-virtualscroller,
+.p-multiselect-overlay .p-multiselect-items-wrapper {
+  max-height: none !important;
+  height: auto !important;
+  overflow: visible !important;
+}

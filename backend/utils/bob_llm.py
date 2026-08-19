@@ -10,8 +10,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from utils.config_io import load_json_file
-from utils.paths import CONFIG_PATH
+from backend.utils.config_io import load_json_file
+from backend.utils.paths import CONFIG_PATH
 
 
 BOB_BASE_URL = "https://api.us-east.bob.ibm.com/inference/v1"

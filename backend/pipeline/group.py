@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""檢查 Work Item HTML 的關聯，Related 直接合併成一組。"""
+"""檢查 Work Item JSON 的關聯，Related 直接合併成一組。"""
 
 from __future__ import annotations
 
-import sys
-
-from utils.pipeline_io import log, log_stage, log_stage_done, normalize_ids, read_pipeline_json, write_pipeline_json
-from utils.work_item_parser import extract_related_ids, read_work_item_html
+from backend.utils.pipeline_io import log, log_stage, log_stage_done, normalize_ids, read_pipeline_json, run_pipeline_main, write_pipeline_json
+from backend.utils.work_item_parser import extract_related_ids, read_work_item
 
 
 def related_group(primary_id: int) -> list[int]:
@@ -20,11 +18,11 @@ def related_group(primary_id: int) -> list[int]:
             continue
         seen.add(work_item_id)
         try:
-            html_text = read_work_item_html(work_item_id)
+            item = read_work_item(work_item_id)
         except FileNotFoundError:
             continue
         group.append(work_item_id)
-        for related_id in extract_related_ids(html_text):
+        for related_id in extract_related_ids(item):
             if related_id not in seen:
                 pending.append(related_id)
     return group
@@ -62,8 +60,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (FileNotFoundError, ValueError, RuntimeError) as exc:
-        print(f"錯誤：{exc}", file=sys.stderr)
-        sys.exit(1)
+    run_pipeline_main(main)

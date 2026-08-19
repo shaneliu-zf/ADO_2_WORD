@@ -2,13 +2,11 @@
 
 從 Azure DevOps 抓 Issue，整理成測試報告 JSON，再填進 Word 範本。
 
-建議用 `python3 main.py` 一鍵跑全專案；其餘情境用分步 pipe，見下方 [使用](#使用)。
+各步驟用函式或 Flask JSON 呼叫，見下方 [使用](#使用)。
 
 ## 流程圖
 
 ### 總覽
-
-`python3 main.py` 從 ① 跑到 ⑤，產出 `output/report_*.docx`。
 
 ![Pipeline 總覽](/docs/pipeline-overview.svg)
 
@@ -55,49 +53,48 @@ cp secrets/config.json.example secrets/config.json
 Bob key 申請：[https://bob.ibm.com/docs/ide/account/api-keys](https://bob.ibm.com/docs/ide/account/api-keys) ，申請 Inference key。
 
 Word 範本：`templates/參考目標文件.docx`  
-HTML 預覽樣板：`templates/work_item.html`、`templates/index.html`、`templates/style.css`  
+預覽頁：`templates/viewer.html`、`templates/style.css`（fetch 會複製到 `output/ado/`）  
 Bob system prompt：`templates/llm_prompt.txt`
 
 ## 檔案結構
 
 ```
 ADO_2_WORD/
-├── main.py                 # 一鍵入口：全專案 list → … → word
-├── README.md
+├── backend/
+│   ├── app.py                  # 本機預覽 ＋ POST /api/… 丟 JSON
+│   ├── pipeline/               # Pipeline 步驟
+│   │   ├── run.py              # run_step／run_from（直接丟 JSON）
+│   │   ├── list_ids.py         # 1/5 WIQL 列出專案全部 Work Item
+│   │   ├── fetch.py            # 2/5 從 ADO 抓 Issue → JSON + 圖片
+│   │   ├── group.py            # 3/5 Related 分組
+│   │   ├── report_by_llm.py    # 4/5 ADO JSON → 報告 JSON（Bob）
+│   │   └── word.py             # 5/5 報告 JSON → 合併成一份 Word
+│   └── utils/                  # 共用工具
+│       ├── ado_client.py       # Azure DevOps HTTP API
+│       ├── bob_llm.py          # IBM Bob chat／JSON 呼叫
+│       ├── pipeline_io.py      # stdin／stdout JSON、階段 log
+│       ├── report_schema.py    # 測試報告 JSON 欄位契約
+│       ├── work_item_parser.py # 讀／解析 fetch 產出的 ADO JSON
+│       ├── paths.py            # 路徑常數
+│       └── config_io.py        # 讀 secrets/config.json
+├── frontend/                   # SPA 前端（待開發）
 ├── docs/
 │   ├── pipeline.drawio           # Draw.io 原檔
 │   └── pipeline-overview.svg     # 匯出的總覽圖
 ├── scripts/
 │   └── export_diagrams.sh        # draw.io → SVG
-│
-├── # —— Pipeline 步驟 ——
-├── list_ids.py             # 1/5 WIQL 列出專案全部 Issue ID
-├── fetch.py                # 2/5 從 ADO 抓 Issue → HTML + 圖片
-├── group.py                # 3/5 Related + 同 Redmine 分組（不用 Bob）
-├── report_by_llm.py               # 4/5 HTML → 報告 JSON（Bob + 規則填 meta）
-├── word.py                 # 5/5 JSON → 合併成一份 Word
-│
-├── utils/                  # 共用工具
-│   ├── ado_client.py       # Azure DevOps HTTP API
-│   ├── bob_llm.py          # IBM Bob chat／JSON 呼叫
-│   ├── pipeline_io.py      # stdin／stdout JSON、階段 log
-│   ├── report_schema.py    # 測試報告 JSON 欄位契約
-│   ├── work_item_parser.py # 讀／解析 fetch 產出的 HTML（欄位、Redmine、關聯）
-│   ├── paths.py            # 路徑常數
-│   └── config_io.py        # 讀 secrets/config.json
-│
 ├── templates/
 │   ├── 參考目標文件.docx   # Word 範本
-│   ├── work_item.html      # 單筆 Issue HTML 樣板
-│   ├── index.html          # Issue 目錄 HTML 樣板
-│   ├── style.css           # HTML 預覽樣式
-│   └── llm_prompt.txt      # Bob 抽出 test_items／test_steps 的 system prompt
+│   ├── viewer.html         # 單一預覽頁（讀 output/ado/*.json）
+│   ├── style.css           # 預覽樣式
+│   └── llm_prompt.txt      # Bob system prompt
 ├── secrets/
 │   ├── config.json.example
 │   └── config.json         # 本機機密（勿提交）
+├── requirements.txt
 └── output/
-    ├── html/               # work_item_*.html、*_files/、index.html、style.css
-    ├── json/               # work_item_902.json
+    ├── ado/                # work_item_*.json、*_files/、index.json、index.html
+    ├── json/               # Bob 報告 JSON（work_item_902.json）
     └── report_YYYYMMDD_HHMMSS.docx
 ```
 
@@ -108,109 +105,89 @@ ADO_2_WORD/
 
 | 類型  | 檔案                                                   | 做什麼                                                |
 | --- | ---------------------------------------------------- | -------------------------------------------------- |
-| 入口  | `main.py`                                            | 全專案一鍵跑 list → fetch → group → report_by_llm → word |
-| 步驟  | `list_ids.py`                                        | WIQL 列出專案全部 Issue ID                               |
-| 步驟  | `fetch.py`                                           | 抓 ADO、下載圖、存 HTML                                   |
-| 步驟  | `group.py`                                           | 讀「關聯」，同 Redmine 才合併                                |
-| 步驟  | `report_by_llm.py`                                   | 呼叫 Bob，寫出報告 JSON（**扣 Bobcoins**）                   |
-| 步驟  | `word.py`                                            | 把所有報告填進一份 Word                                     |
-| 共用  | `utils/ado_client.py`                                | PAT 驗證、API URL、抓 work item／留言                      |
-| 共用  | `utils/bob_llm.py`                                   | Bob `chat_completion`／`chat_json`                  |
-| 共用  | `utils/pipeline_io.py`                               | 讀寫 pipeline JSON、階段分隔 log                          |
-| 共用  | `utils/report_schema.py`                             | 報告欄位定義與讀取時驗證                                       |
-| 共用  | `utils/work_item_parser.py`                          | 從 HTML 抽欄位、Redmine、Related ID                      |
-| 設定  | `utils/paths.py`／`utils/config_io.py`                | 路徑與設定檔                                             |
-| 資源  | `templates/`                                         | Word／HTML／CSS 樣板                                   |
+| 步驟  | `backend/pipeline/list_ids.py`                       | 列出專案全部 Work Item（ID、標題、類型、狀態）             |
+| 步驟  | `backend/pipeline/fetch.py`                          | 抓 ADO、下載圖、存 JSON                                   |
+| 步驟  | `backend/pipeline/group.py`                          | 讀 relations，Related 直接合併                             |
+| 步驟  | `backend/pipeline/report_by_llm.py`                  | 呼叫 Bob，寫出報告 JSON（**扣 Bobcoins**）                   |
+| 步驟  | `backend/pipeline/word.py`                           | 把所有報告填進一份 Word                                     |
+| 共用  | `backend/pipeline/run.py`                            | `run_step`／`run_from`，直接丟 JSON                        |
+| 共用  | `backend/utils/ado_client.py`                        | PAT 驗證、API URL、抓 work item／留言                      |
+| 共用  | `backend/utils/bob_llm.py`                           | Bob `chat_completion`／`chat_json`                  |
+| 共用  | `backend/utils/pipeline_io.py`                       | 讀寫 pipeline JSON、階段分隔 log                          |
+| 共用  | `backend/utils/report_schema.py`                     | 報告欄位定義與讀取時驗證                                       |
+| 共用  | `backend/utils/work_item_parser.py`                  | 從 ADO JSON 抽欄位、Redmine、Related ID                  |
+| 設定  | `backend/utils/paths.py`／`backend/utils/config_io.py` | 路徑與設定檔                                           |
+| 資源  | `templates/`                                         | Word／預覽頁／CSS 樣板                                   |
 | 資源  | `secrets/`                                           | PAT、Bob key                                        |
-| 產出  | `output/html/`、`output/json/`、`output/report_*.docx` | 中間產物與最終 Word                                       |
+| 產出  | `output/ado/`、`output/json/`、`output/report_*.docx` | 中間產物與最終 Word                                       |
 
 
 
 
 ## 使用
 
-在專案根目錄執行。
-
-### 一鍵完整跑
+在專案根目錄執行。先開預覽伺服器（也提供 API）：
 
 ```bash
-python3 main.py
+python3 -m backend.app
 ```
 
-WIQL 列出專案全部 Issue，再跑 fetch → group → report_by_llm → word（**會對每一組呼叫 Bob**）。
+瀏覽器開 http://127.0.0.1:5000/ ：左邊是目前的 ADO，右邊是五個步驟與「下一步」（每次只跑一步、處理勾選的 Issue）。
 
-fetch 不下載圖片：
+### Python 函式
 
-```bash
-python3 main.py --no-images
+```python
+from backend.pipeline import run_from, run_step
+
+# 從 fetch 一路跑到 Word
+run_from("fetch", [902, 939])
+
+# 只跑單一步
+run_step("fetch", [902, 939])
+run_step("group", [902, 939])
+run_step("word", [902, 939])
+
+# 全專案（先 list_ids）
+run_from("list_ids")
 ```
 
+也可傳字串或物件：`"[902, 939]"`、`{"ids": [902, 939]}`、`{"groups": [[902, 939]]}`。
 
-
-### 分步 pipe
-
-Pipe 串法：`上一步 stdout → 下一步 stdin`，兩邊都是 ID 的 JSON。
-
-#### ① 起（全專案，等同 `main.py`）
-
-不必 `echo`，直接從 `list_ids.py` 開始：
-
-```bash
-python3 list_ids.py \
-  | python3 fetch.py \
-  | python3 group.py \
-  | python3 report_by_llm.py \
-  | python3 word.py
-```
-
-
-
-#### ② 起（指定 ID）
-
-第一步前用 `echo` 餵 ID：
-
-```bash
-echo '[902, 939]' \
-  | python3 fetch.py \
-  | python3 group.py \
-  | python3 report_by_llm.py \
-  | python3 word.py
-```
-
-
-
-#### ③ 起（HTML 需已在 `output/html/`）
-
-```bash
-echo '[902, 939]' \
-  | python3 group.py \
-  | python3 report_by_llm.py \
-  | python3 word.py
-```
-
-
-
-#### ⑤ 起（JSON 需已在 `output/json/`）
-
-```bash
-echo '[902, 939]' | python3 word.py
-```
-
-也可以只跑單一步，例如預覽分組：`echo '[902, 939]' | python3 group.py`（結果印在 stderr，stdout 是 `[[902,939],…]`）。
+| 從哪步 | 呼叫 |
+| --- | --- |
+| ① 全專案 | `run_from("list_ids")` |
+| ② 指定 ID | `run_from("fetch", [902, 939])` |
+| ③ ADO JSON 已在 `output/ado/` | `run_from("group", [902, 939])` |
+| ⑤ 報告 JSON 已在 `output/json/` | `run_from("word", [902, 939])` |
 
 建議先用單筆 ID 試跑 Bob，確認 key 沒問題再跑多筆。
+
+### Flask JSON
+
+```bash
+# 從 fetch 跑到 Word
+curl -s -X POST http://127.0.0.1:5000/api/run \
+  -H 'Content-Type: application/json' \
+  -d '{"from":"fetch","ids":[902,939]}'
+
+# 只跑 fetch
+curl -s -X POST http://127.0.0.1:5000/api/fetch \
+  -H 'Content-Type: application/json' \
+  -d '[902, 939]'
+```
+
+`POST /api/run` 的 `from` 可以是 `list_ids`、`fetch`、`group`、`report_by_llm`、`word`。
 
 ## Pipeline 契約
 
 
 | 步驟                 | stdin  | stdout                  | 副作用（檔案）                | 用 Bob？            |
 | ------------------ | ------ | ----------------------- | ---------------------- | ----------------- |
-| `list_ids.py`      | （無）    | `[902, 939, …]`         | 無                      | 否                 |
-| `fetch.py`         | ID 陣列  | 成功抓到的 ID                | `output/html/`         | 否                 |
-| `group.py`         | ID 陣列  | 分組 `[[902,939],[1329]]` | 無                      | 否                 |
-| `report_by_llm.py` | ID 或分組 | 處理完的分組                  | `output/json/`         | **是**             |
-| `word.py`          | ID 或分組 | docx 路徑（單一）             | `output/report_*.docx` | 否                 |
-| `main.py`          | （無）    | docx 路徑                 | 全專案完整跑                 | report_by_llm 階段會 |
+| `backend/pipeline/list_ids.py`      | （無）    | `[{id, title, work_item_type, state}, …]` | 無                      | 否                 |
+| `backend/pipeline/fetch.py`         | ID 陣列  | 成功抓到的 ID                | `output/ado/`          | 否                 |
+| `backend/pipeline/group.py`         | ID 陣列  | 分組 `[[902,939],[1329]]` | 無                      | 否                 |
+| `backend/pipeline/report_by_llm.py` | ID 或分組 | 處理完的分組                  | `output/json/`         | **是**             |
+| `backend/pipeline/word.py`          | ID 或分組 | docx 路徑（單一）             | `output/report_*.docx` | 否                 |
 
 
 輸入格式：
@@ -231,7 +208,7 @@ echo '[902, 939]' | python3 word.py
 
 `group.py` 規則（不呼叫 Bob）：
 
-1. 讀 HTML「關聯」，找 Related Work Item。
+1. 讀 ADO JSON 的 `relations`，找 Related Work Item。
 2. 兩邊標題抽到**相同且非空**的 Redmine 編號 → 合併。標題沒有 Redmine 則不合併。
 3. 合併後 `report_by_llm.py` 只對該組呼叫一次 Bob；JSON 用 `ado_ids` 保留所有 ADO。
 
@@ -263,8 +240,8 @@ echo '[902, 939]' | python3 word.py
 | ADO 主旨  | `System.Title`                                      |
 | 測試環境    | 固定 `QAS`                                            |
 | Site    | `SIT-1` → `US-1`，`SIT-2` → `US-2`                   |
-| 測試日期    | `System.CreatedDate`                                |
-| 測試人員    | `System.CreatedBy`                                  |
+| 測試日期    | 變更歷史最後一次離開 `Testing` 的日期（多單用「、」分隔） |
+| 測試人員    | 變更歷史最後一次把狀態改成 `Testing` 的操作者              |
 | 審核人員    | 空                                                   |
 | 測試結果    | `System.State`                                      |
 | Redmine | 標題結尾 `(63852.64178)`；標題沒有則不寫 |
@@ -281,9 +258,10 @@ echo '[902, 939]' | python3 word.py
 
 ## 注意
 
-- 只有 `report_by_llm.py`（或 `main.py` 跑到 report_by_llm）會扣 Bobcoins。
+- 只有 `report_by_llm.py` 會扣 Bobcoins。
 - 呼叫 Bob 時 User-Agent 必須是 `bobshell`，否則會被 Cloudflare 擋住。
 - Word 範本會保留封面、目錄、測試目的，刪掉範例 `ADO#681`，再填入資料。
+- group／Bob 讀 `output/ado/*.json`。預覽用 `python3 -m backend.app`。
 - `secrets/config.json` 已列入 `.gitignore`，不要提交 PAT 或 Bob key。
 
 

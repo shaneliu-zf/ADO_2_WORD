@@ -14,6 +14,8 @@ from typing import Any
 WIT_API = "7.1"
 COMMENTS_API = "7.1-preview.4"
 COMMENTS_PAGE_SIZE = 200
+UPDATES_PAGE_SIZE = 200
+WORK_ITEMS_BATCH_SIZE = 200
 
 
 def auth_header(pat: str) -> str:
@@ -99,3 +101,52 @@ def fetch_comments(
         continuation = payload.get("continuationToken")
         if not continuation:
             return comments
+
+
+def fetch_updates(
+    config: dict[str, Any],
+    authorization: str,
+    work_item_id: int,
+) -> list[dict[str, Any]]:
+    """抓取 Work Item 每次更新的差異（指派、狀態等）。"""
+    updates: list[dict[str, Any]] = []
+    skip = 0
+    while True:
+        url = api_url(
+            config,
+            "wit/workItems",
+            str(work_item_id),
+            "updates",
+            query={
+                "$skip": str(skip),
+                "$top": str(UPDATES_PAGE_SIZE),
+                "api-version": WIT_API,
+            },
+        )
+        payload = request_json(url, authorization)
+        batch = payload if isinstance(payload, list) else (payload.get("value") or [])
+        if not batch:
+            return updates
+        updates.extend(batch)
+        if len(batch) < UPDATES_PAGE_SIZE:
+            return updates
+        skip += len(batch)
+
+
+def fetch_work_items_batch(
+    config: dict[str, Any],
+    authorization: str,
+    work_item_ids: list[int],
+    fields: list[str],
+) -> list[dict[str, Any]]:
+    if not work_item_ids:
+        return []
+    url = api_url(config, "wit/workitemsbatch", query={"api-version": WIT_API})
+    payload = request_json(
+        url,
+        authorization,
+        {"ids": [int(value) for value in work_item_ids], "fields": fields},
+    )
+    if isinstance(payload, list):
+        return payload
+    return payload.get("value") or []

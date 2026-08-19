@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from utils.paths import CONFIG_PATH
+from backend.utils.paths import CONFIG_PATH
 
 
 def load_json_file(path: Path) -> Any:

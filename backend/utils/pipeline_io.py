@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 import sys
 from typing import Any
@@ -12,7 +13,7 @@ def read_pipeline_json() -> Any:
     text = sys.stdin.read().strip()
     if not text:
         raise ValueError(
-            'stdin 沒有資料。請傳入 JSON，例如：echo \'[902, 939]\' | python3 fetch.py'
+            "stdin 沒有資料。請傳入 JSON，例如：echo '[902, 939]' | python3 -m backend.pipeline.fetch"
         )
     try:
         return json.loads(text)
@@ -38,6 +39,10 @@ def normalize_ids(payload: Any) -> list[int]:
 
     ids: list[int] = []
     for value in values:
+        if isinstance(value, dict):
+            if value.get("id") is None:
+                raise ValueError(f"無效的 Work Item：{value!r}")
+            value = value["id"]
         if isinstance(value, bool):
             raise ValueError("Work Item ID 必須是整數")
         try:
@@ -88,3 +93,12 @@ def log_stage_done(summary: str = "完成") -> None:
     log("-" * 60)
     log(f"  {summary}")
     log("-" * 60)
+
+
+def run_pipeline_main(main_fn: Callable[[], None]) -> None:
+    """執行 pipeline 步驟的 main()，把常見錯誤印到 stderr 後結束。"""
+    try:
+        main_fn()
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        print(f"錯誤：{exc}", file=sys.stderr)
+        sys.exit(1)

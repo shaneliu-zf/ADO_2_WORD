@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import sys
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -18,9 +17,9 @@ from docx.oxml.ns import qn
 from docx.shared import Inches
 from lxml import etree
 
-from utils.paths import DOCX_DIR, HTML_DIR, JSON_DIR, TEMPLATE_PATH
-from utils.pipeline_io import log, log_stage, log_stage_done, normalize_ids, read_pipeline_json, write_pipeline_json
-from utils.report_schema import META_FIELDS, validate_report
+from backend.utils.paths import ADO_DIR, DOCX_DIR, TEMPLATE_PATH
+from backend.utils.pipeline_io import log, log_stage, log_stage_done, normalize_ids, read_pipeline_json, run_pipeline_main, write_pipeline_json
+from backend.utils.report_schema import META_FIELDS, find_report
 
 
 IMAGE_WIDTH = Inches(6.2)
@@ -31,26 +30,12 @@ META_NO_START = 1
 
 
 def load_report(work_item_id: int) -> dict[str, Any]:
-    path = JSON_DIR / f"work_item_{work_item_id}.json"
-    candidates = []
-    if path.exists():
-        candidates.append(path)
-    candidates.extend(
-        candidate
-        for candidate in sorted(JSON_DIR.glob("work_item_*.json"))
-        if candidate != path
-    )
-    for candidate in candidates:
-        payload = validate_report(
-            json.loads(candidate.read_text(encoding="utf-8")),
-            candidate,
+    report = find_report(work_item_id)
+    if report is None:
+        raise FileNotFoundError(
+            f"找不到包含 ADO #{work_item_id} 的 JSON。請先執行 python3 report_by_llm.py"
         )
-        ado_ids = payload.get("ado_ids") or [payload.get("ado_id")]
-        if work_item_id in ado_ids:
-            return payload
-    raise FileNotFoundError(
-        f"找不到包含 ADO #{work_item_id} 的 JSON。請先執行 python3 report_by_llm.py"
-    )
+    return report
 
 
 def elm_text(elm: etree._Element) -> str:
@@ -355,11 +340,74 @@ def fill_attachments(doc: Document, attach_heading: etree._Element, report: dict
         if not images:
             continue
         for src in images:
-            image_path = HTML_DIR / str(src)
+            image_path = ADO_DIR / str(src)
             if not image_path.exists():
                 log(f"  找不到圖片，略過：{image_path}")
                 continue
             cursor = add_picture_after(doc, cursor, image_path)
+
+
+def format_history_date(raw: str) -> str:
+    """9999-01-01T… → （最新）；正常 ISO → YYYY/M/D HH:MM"""
+    text = (raw or "").strip()
+    if text.startswith("9999"):
+        return "（最新）"
+    match = re.match(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})", text)
+    if match:
+        y, m, d, hh, mm = match.groups()
+        return f"{y}/{int(m)}/{int(d)} {hh}:{mm}"
+    return text
+
+
+def fill_change_history(doc: Document, heading_elm: etree._Element, report: dict[str, Any]) -> None:
+    set_paragraph_bold(heading_elm, bold=True)
+    history = report.get("change_history") or []
+    if not history:
+        add_paragraph_after(doc, heading_elm, "（無變動紀錄）", "Heading 3")
+        return
+    from docx.table import Table as DocxTable
+
+    tbl_elm = OxmlElement("w:tbl")
+    tbl_pr = OxmlElement("w:tblPr")
+    tbl_elm.append(tbl_pr)
+    style = OxmlElement("w:tblStyle")
+    style.set(qn("w:val"), "a3")
+    tbl_pr.append(style)
+    tbl_w = OxmlElement("w:tblW")
+    tbl_w.set(qn("w:w"), "0")
+    tbl_w.set(qn("w:type"), "auto")
+    tbl_pr.append(tbl_w)
+    look = OxmlElement("w:tblLook")
+    look.set(qn("w:val"), "04A0")
+    tbl_pr.append(look)
+
+    heading_elm.addnext(tbl_elm)
+    table = DocxTable(tbl_elm, doc)
+
+    headers = ["時間", "操作者", "欄位", "原值", "新值"]
+    total_rows = 1 + len(history)
+    for _ in range(total_rows):
+        row_elm = OxmlElement("w:tr")
+        for _ in range(len(headers)):
+            tc = OxmlElement("w:tc")
+            p = OxmlElement("w:p")
+            tc.append(p)
+            row_elm.append(tc)
+        tbl_elm.append(row_elm)
+
+    table = DocxTable(tbl_elm, doc)
+    for col_idx, header in enumerate(headers):
+        set_cell_text(table.rows[0].cells[col_idx], header, align="center", font_size=FONT_SIZE)
+    for row_idx, entry in enumerate(history, start=1):
+        row = table.rows[row_idx]
+        set_cell_text(row.cells[0], format_history_date(entry.get("date", "")), align="left", font_size=FONT_SIZE)
+        set_cell_text(row.cells[1], entry.get("by", ""), align="left", font_size=FONT_SIZE)
+        set_cell_text(row.cells[2], entry.get("field", ""), align="left", font_size=FONT_SIZE)
+        set_cell_text(row.cells[3], entry.get("old", ""), align="left", font_size=FONT_SIZE)
+        set_cell_text(row.cells[4], entry.get("new", ""), align="left", font_size=FONT_SIZE)
+
+    col_widths = [2000, 1800, 1400, 2200, 2200]
+    set_tbl_width(tbl_elm, col_widths)
 
 
 def ado_heading_text(report: dict[str, Any]) -> str:
@@ -473,6 +521,18 @@ def fill_block(doc: Document, block: list[etree._Element], report: dict[str, Any
             parent.remove(elm)
     fill_attachments(doc, attach_heading, report)
 
+    last_elm = attach_heading
+    while last_elm.getnext() is not None and last_elm.getnext().tag != qn("w:sectPr"):
+        candidate = last_elm.getnext()
+        if candidate.tag == qn("w:p") and paragraph_style(candidate) in {"2", "4"}:
+            break
+        last_elm = candidate
+    history_heading = add_paragraph_after(doc, last_elm, "變動紀錄", "Heading 2")
+    p_pr = ensure_child(history_heading, "w:pPr")
+    p_style = ensure_child(p_pr, "w:pStyle")
+    p_style.set(qn("w:val"), "4")
+    fill_change_history(doc, history_heading, report)
+
 
 def paragraph_style(p_elm: etree._Element) -> str:
     p_pr = p_elm.find(qn("w:pPr"))
@@ -538,12 +598,14 @@ def collect_ado_outline(body: etree._Element) -> list[dict[str, Any]]:
         style = paragraph_style(child)
         text = elm_text(child).strip()
         if style == "2" and text.startswith("ADO"):
-            current = {"heading": child, "title": text, "items": None, "attach": None}
+            current = {"heading": child, "title": text, "items": None, "attach": None, "history": None}
             outline.append(current)
         elif current is not None and style == "4" and text == "測試項目":
             current["items"] = child
         elif current is not None and style == "4" and text == "測試附件":
             current["attach"] = child
+        elif current is not None and style == "4" and text == "變動紀錄":
+            current["history"] = child
     return outline
 
 
@@ -572,6 +634,9 @@ def refresh_toc(doc: Document) -> None:
         elif ado_toc_paras and "測試附件" in text:
             proto_by_kind.setdefault("attach", para)
             ado_toc_paras.append(para)
+        elif ado_toc_paras and "變動紀錄" in text:
+            proto_by_kind.setdefault("history", para)
+            ado_toc_paras.append(para)
 
     if "heading" not in proto_by_kind:
         return
@@ -588,6 +653,7 @@ def refresh_toc(doc: Document) -> None:
             ("heading", f"{index}", block["title"], block["heading"]),
             ("items", f"{index}.1", "測試項目", block.get("items")),
             ("attach", f"{index}.2", "測試附件", block.get("attach")),
+            ("history", f"{index}.3", "變動紀錄", block.get("history")),
         ]
         for kind, number, title, heading_elm in entries:
             proto = proto_by_kind.get(kind)
@@ -693,8 +759,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (FileNotFoundError, ValueError, RuntimeError) as exc:
-        print(f"錯誤：{exc}", file=sys.stderr)
-        sys.exit(1)
+    run_pipeline_main(main)

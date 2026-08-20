@@ -31,7 +31,7 @@
         <div class="tab-toolbar">
           <Button v-if="!editing" label="編輯" icon="pi pi-pencil" size="small" outlined @click="startEdit" />
           <template v-else>
-            <Button label="儲存" icon="pi pi-save" size="small" :loading="saving" @click="handleSave" />
+            <Button label="儲存" icon="pi pi-save" size="small" :loading="saving" @click="handleSave(editorRef?.getDraft())" />
             <Button label="取消" icon="pi pi-times" size="small" outlined severity="secondary" @click="cancelEdit" />
           </template>
         </div>

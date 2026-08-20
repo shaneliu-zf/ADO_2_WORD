@@ -198,7 +198,9 @@ export const usePipelineStore = defineStore('pipeline', () => {
   async function prevStep() {
     if (currentStep.value <= 1) return
     const next = currentStep.value - 1
-    const session = await updateSession({ currentStep: next })
+    // 退回到 next 步驟：reachedStep 也同步縮減，清除後面步驟的完成狀態與進度條
+    const newReached = Math.min(reachedStep.value, next - 1)
+    const session = await updateSession({ currentStep: next, reachedStep: newReached })
     applySession(session)
     setStatus(`回到「${stepLabel(currentStep.value)}」。再按執行會重跑這一步。`)
   }

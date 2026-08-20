@@ -8,11 +8,12 @@
     rowGroupMode="rowspan"
     groupRowsBy="groupKey"
     sortMode="single"
-    sortField="groupKey"
-    :sortOrder="1"
+    :sortField="sortField"
+    :sortOrder="sortOrder"
     :rowHover="true"
     class="ado-table"
     :rowClass="rowClass"
+    @sort="onSort"
   >
     <!-- Checkbox 欄：field="groupKey" 讓 DataTable rowspan 自動合併關聯組 -->
     <Column
@@ -177,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Checkbox from 'primevue/checkbox'
@@ -192,6 +193,16 @@ const emit = defineEmits<{
 }>()
 
 const itemsStore = useItemsStore()
+
+// 排序狀態
+const sortField = ref<string>('groupKey')
+const sortOrder = ref<1 | -1>(1)
+
+function onSort(event: { sortField: string; sortOrder: number }) {
+  sortField.value = event.sortField || 'groupKey'
+  sortOrder.value = (event.sortOrder as 1 | -1) || 1
+  itemsStore.setSort(sortField.value, sortOrder.value)
+}
 
 /**
  * 取得某列代表的「整組 ID」清單：

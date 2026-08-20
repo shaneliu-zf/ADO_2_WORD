@@ -740,10 +740,13 @@ def update_item(item_id: int):
         report = validate_report(body, source=f"work_item_{item_id}")
     except ValueError as exc:
         return _json_error(exc)
-    path, _existing = _report_path_for(item_id)
+    path, existing = _report_path_for(item_id)
     if path is None:
         JSON_DIR.mkdir(parents=True, exist_ok=True)
         path = JSON_DIR / f"work_item_{item_id}.json"
+    # 保留現有 change_history（前端 ReportEditor 不編輯此欄位）
+    if existing and "change_history" not in report and "change_history" in existing:
+        report["change_history"] = existing["change_history"]  # type: ignore[typeddict-unknown-key]
     try:
         path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except OSError as exc:

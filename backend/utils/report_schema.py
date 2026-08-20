@@ -73,8 +73,12 @@ def validate_report(payload: Any, source: Path | str = "報告 JSON") -> Report:
     missing = sorted(REQUIRED_REPORT_KEYS - payload.keys())
     if missing:
         raise ValueError(f"{source} 缺少欄位：{', '.join(missing)}")
+    # ado_ids 空陣列時嘗試從 ado_id 補回，相容前端只帶 ado_id 的情況
     if not isinstance(payload["ado_ids"], list) or not payload["ado_ids"]:
-        raise ValueError(f"{source} 的 ado_ids 必須是非空陣列")
+        if payload.get("ado_id"):
+            payload["ado_ids"] = [int(payload["ado_id"])]
+        else:
+            raise ValueError(f"{source} 的 ado_ids 必須是非空陣列")
     if not isinstance(payload["test_items"], list):
         raise ValueError(f"{source} 的 test_items 必須是陣列")
     if not isinstance(payload["test_steps"], list):

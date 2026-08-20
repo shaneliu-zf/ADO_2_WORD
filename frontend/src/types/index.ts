@@ -6,6 +6,13 @@ export interface AdoItem {
   site: string
   category: string
   issuePriority: string
+  redmineId: string
+  assignedTo: string
+  createdBy: string
+  saBy: string
+  engineerBy: string
+  testerBy: string
+  createdDate: string
   fetched: boolean
   grouped: boolean
   hasReport: boolean

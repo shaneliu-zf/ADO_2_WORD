@@ -23,6 +23,13 @@
             v-tooltip="itemsStore.selectedIds.size > 0 ? `刪除 ${itemsStore.selectedIds.size} 筆` : '請先勾選要刪除的項目'"
           />
           <Button
+            icon="pi pi-chart-bar"
+            outlined
+            rounded
+            @click="router.push('/dashboard')"
+            v-tooltip="'資料分析：類型、Redmine、狀態與列表'"
+          />
+          <Button
             icon="pi pi-cog"
             outlined
             rounded
@@ -65,6 +72,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
 import { useToast } from 'primevue/usetoast'
@@ -80,6 +88,7 @@ import type { AdoItem } from '@/types'
 
 const itemsStore = useItemsStore()
 const pipelineStore = usePipelineStore()
+const router = useRouter()
 const toast = useToast()
 const confirm = useConfirm()
 const loading = ref(false)

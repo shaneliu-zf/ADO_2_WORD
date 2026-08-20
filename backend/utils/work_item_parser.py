@@ -218,6 +218,26 @@ def extract_redmine(item: dict[str, Any]) -> str:
     return ""
 
 
+def last_state_actor(item: dict[str, Any], state: str) -> str:
+    """變更歷史中，最後一次把狀態改成 `state` 的操作者。"""
+    actor = ""
+    target = (state or "").strip().casefold()
+    if not target:
+        return ""
+    for entry in item.get("history") or []:
+        if not isinstance(entry, dict):
+            continue
+        for change in entry.get("changes") or []:
+            if not isinstance(change, dict):
+                continue
+            if change.get("field") != "System.State":
+                continue
+            if str(change.get("to") or "").strip().casefold() != target:
+                continue
+            actor = stringify(entry.get("by"))
+    return actor
+
+
 def extract_related_ids(item: dict[str, Any]) -> list[int]:
     found: set[int] = set()
     self_id = item.get("id")

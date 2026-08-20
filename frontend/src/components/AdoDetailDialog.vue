@@ -3,6 +3,7 @@
     v-model:visible="visibleModel"
     :header="dialogHeader"
     :style="{ width: '80vw', maxWidth: '1000px' }"
+    :baseZIndex="2000"
     :contentStyle="{ height: 'calc(85vh - 6rem)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }"
     modal
     dismissableMask

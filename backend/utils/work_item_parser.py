@@ -186,12 +186,19 @@ def prefix_static_media(html_text: str) -> str:
             new_src = "/static/ado/" + src.lstrip("./")
         return f"{prefix}{quote}{html.escape(new_src, quote=True)}{quote}"
 
-    return IMG_SRC_RE.sub(repl, html_text or "")
+    try:
+        return IMG_SRC_RE.sub(repl, html_text or "")
+    except (re.error, RecursionError):
+        return html_text or ""
 
 
 def rewrite_preview_media(text: str, images: dict[str, str] | None = None) -> str:
-    mapped = apply_image_map(text or "", images)
-    return prefix_static_media(render_rich_html(mapped))
+    try:
+        mapped = apply_image_map(text or "", images)
+        return prefix_static_media(render_rich_html(mapped))
+    except (re.error, RecursionError, Exception):
+        # fallback：回傳純文字 HTML，至少不 crash
+        return html.escape(text or "").replace("\n", "<br>")
 
 
 def extract_redmine(item: dict[str, Any]) -> str:

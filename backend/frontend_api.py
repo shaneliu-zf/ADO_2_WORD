@@ -688,7 +688,22 @@ def get_item_html(item_id: int):
         item = read_work_item(item_id)
     except FileNotFoundError as exc:
         return _json_error(exc, 404)
-    return Response(_render_ado_html(item, item_id), mimetype="text/html")
+    try:
+        rendered = _render_ado_html(item, item_id)
+    except BaseException as exc:  # noqa: BLE001 — catch RecursionError / re.error 等
+        work_item_id_str = html.escape(str(item_id))
+        title = html.escape(stringify(item.get("title") or f"Work Item {item_id}"))
+        error_msg = html.escape(str(exc)[:300])
+        rendered = (
+            f"<!DOCTYPE html><html lang='zh-Hant'><head><meta charset='utf-8'>"
+            f"<style>body{{font-family:sans-serif;margin:16px;color:#222}}"
+            f".err{{color:#dc2626;background:#fef2f2;border:1px solid #fecaca;"
+            f"border-radius:6px;padding:12px;margin-top:1rem}}</style></head>"
+            f"<body><h1>#{work_item_id_str} {title}</h1>"
+            f"<div class='err'>⚠ HTML 渲染失敗，無法顯示完整原文。<br>"
+            f"<small>{error_msg}</small></div></body></html>"
+        )
+    return Response(rendered, mimetype="text/html")
 
 
 @bp.get("/api/items/<int:item_id>/updates")

@@ -3,6 +3,15 @@ import type { AdoItem, AppConfig, Report, Group, PipelineSession } from '@/types
 
 const http = axios.create({ baseURL: '/' })
 
+function unwrapApiError(error: unknown): never {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as { message?: string; error?: string } | undefined
+    const message = data?.message || data?.error || error.message
+    throw new Error(message)
+  }
+  throw error
+}
+
 // ── Session / items ────────────────────────────────────────────────────────────
 
 export function fetchConfig(): Promise<AppConfig> {
@@ -40,7 +49,7 @@ export function fetchItemHtml(id: number): Promise<string> {
 }
 
 export function updateItem(id: number, report: Report): Promise<{ ok: boolean }> {
-  return http.put<{ ok: boolean }>(`/api/items/${id}`, report).then(r => r.data)
+  return http.put<{ ok: boolean }>(`/api/items/${id}`, report).then(r => r.data).catch(unwrapApiError)
 }
 
 export function uploadItemImage(id: number, file: File): Promise<{ src: string }> {

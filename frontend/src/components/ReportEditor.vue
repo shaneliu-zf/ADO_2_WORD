@@ -181,7 +181,7 @@
 
     <!-- ── Save ────────────────────────────────────────────────────────────── -->
     <div v-if="showSave && !readonly" class="save-row">
-      <Button label="儲存" icon="pi pi-save" :loading="saving" @click="emit('save', local)" />
+      <Button label="儲存" icon="pi pi-save" :loading="saving" @click="emit('save', local.value)" />
     </div>
   </div>
 </template>

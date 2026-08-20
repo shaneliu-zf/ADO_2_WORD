@@ -92,7 +92,8 @@ _abort_event = threading.Event()
 
 
 def _json_error(exc: Exception, status: int = 400):
-    return jsonify(error=str(exc)), status
+    message = str(exc)
+    return jsonify(error=message, message=message), status
 
 
 def _sse(payload: dict[str, Any]) -> str:

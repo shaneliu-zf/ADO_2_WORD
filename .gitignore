@@ -2,7 +2,7 @@
 secrets/pat.txt
 secrets/config.json
 .env
-
+.DS_Store
 # 輸出與快取
 output/
 __pycache__/

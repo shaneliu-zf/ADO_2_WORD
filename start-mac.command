@@ -63,12 +63,13 @@ ensure_python() {
   fi
 
   python_ok "$PY" || die "無法使用 Python ${PY_MIN}+"
-  say "Python：$("$PY" -c 'import sys; print(sys.version.split()[0])')（$PY）"
+  py_ver="$("$PY" -c 'import sys; print(sys.version.split()[0])')"
+  say "Python：${py_ver} (${PY})"
 }
 
 ensure_python_packages() {
   say "檢查 Python 套件…"
-  if "$PY" -c "import flask, docx, lxml, markdown, json_repair" 2>/dev/null; then
+  if "$PY" -c "import flask, docx, lxml, markdown" 2>/dev/null; then
     say "Python 套件：已就緒"
     return 0
   fi
@@ -77,7 +78,7 @@ ensure_python_packages() {
     say "改用 --break-system-packages 安裝…"
     "$PY" -m pip install --break-system-packages -r "$ROOT/requirements.txt"
   fi
-  "$PY" -c "import flask, docx, lxml, markdown, json_repair" \
+  "$PY" -c "import flask, docx, lxml, markdown" \
     || die "Python 套件安裝失敗"
 }
 

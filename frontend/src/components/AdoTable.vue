@@ -1,7 +1,6 @@
 <template>
   <DataTable
     :value="itemsStore.tableRows"
-    v-model:selection="selectedRows"
     dataKey="id"
     scrollable
     scrollHeight="flex"
@@ -15,7 +14,30 @@
     class="ado-table"
     :rowClass="rowClass"
   >
-    <Column selectionMode="multiple" headerStyle="width:3rem" :showFilterMenu="false" />
+    <!-- Checkbox 欄：field="groupKey" 讓 DataTable rowspan 自動合併關聯組 -->
+    <Column
+      field="groupKey"
+      headerStyle="width:3rem"
+      style="width:3rem;text-align:center"
+      :showFilterMenu="false"
+    >
+      <template #header>
+        <Checkbox
+          :modelValue="allChecked"
+          :indeterminate="someChecked && !allChecked"
+          binary
+          @update:modelValue="toggleAll"
+        />
+      </template>
+      <template #body="{ data }">
+        <!-- rowspan 合併後只有 head 列的 slot 會被呼叫 -->
+        <Checkbox
+          :modelValue="isGroupChecked(data)"
+          binary
+          @update:modelValue="(v: boolean) => toggleGroup(data, v)"
+        />
+      </template>
+    </Column>
     <Column field="id" header="ID" sortable style="width:88px" :showFilterMenu="false">
       <template #filter>
         <InputText v-model="itemsStore.filters.idText" placeholder="ID" class="w-full filter-control" />
@@ -158,6 +180,7 @@
 import { computed } from 'vue'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
+import Checkbox from 'primevue/checkbox'
 import Tag from 'primevue/tag'
 import InputText from 'primevue/inputtext'
 import MultiSelect from 'primevue/multiselect'
@@ -169,6 +192,55 @@ const emit = defineEmits<{
 }>()
 
 const itemsStore = useItemsStore()
+
+/**
+ * 取得某列代表的「整組 ID」清單：
+ *   - related group head → groupIds（整組）
+ *   - related 非 head   → 不會渲染 Checkbox，但備用傳回 groupIds
+ *   - solo / unknown    → [item.id]（只有自己）
+ */
+function groupIdsFor(data: AdoTableRow): number[] {
+  return data.relationKind === 'related' ? data.groupIds : [data.id]
+}
+
+/** 某列（組）是否全選 */
+function isGroupChecked(data: AdoTableRow): boolean {
+  return groupIdsFor(data).every(id => itemsStore.selectedIds.has(id))
+}
+
+/** 全選狀態：所有「需渲染 Checkbox」的列是否都勾選 */
+const allChecked = computed(() => {
+  const checkableRows = itemsStore.tableRows.filter(
+    r => r.relationKind !== 'related' || r.isGroupHead,
+  )
+  return checkableRows.length > 0 && checkableRows.every(r => isGroupChecked(r))
+})
+
+/** 部分選取（用於 indeterminate） */
+const someChecked = computed(() =>
+  itemsStore.tableRows.some(r => itemsStore.selectedIds.has(r.id)),
+)
+
+/** 勾選 / 取消某列代表的整組 */
+function toggleGroup(data: AdoTableRow, checked: boolean) {
+  const ids = groupIdsFor(data)
+  const next = new Set(itemsStore.selectedIds)
+  for (const id of ids) {
+    if (checked) next.add(id)
+    else next.delete(id)
+  }
+  itemsStore.setSelectedIds([...next])
+}
+
+/** 表頭全選 / 取消全選（對所有可見列操作） */
+function toggleAll(checked: boolean) {
+  if (checked) {
+    itemsStore.setSelectedIds(itemsStore.tableRows.map(r => r.id))
+  } else {
+    itemsStore.setSelectedIds([])
+  }
+}
+
 const fetchedOptions = [
   { label: '下載完成', value: 'yes' },
   { label: '未下載', value: 'no' },
@@ -188,16 +260,6 @@ const statusValues = ['yes', 'no']
 function allSelected(selected: string[], options: string[]) {
   return options.length > 0 && selected.length === options.length && options.every(opt => selected.includes(opt))
 }
-
-/** Two-way bind: converts between Set<number> in store and AdoItem[] for DataTable. */
-const selectedRows = computed<AdoTableRow[]>({
-  get() {
-    return itemsStore.tableRows.filter(i => itemsStore.selectedIds.has(i.id))
-  },
-  set(rows) {
-    itemsStore.setSelectedIds(rows.map(r => r.id))
-  },
-})
 
 function rowClass(data: AdoTableRow) {
   return data.relationKind === 'related' ? 'grouped-row' : ''

@@ -77,7 +77,7 @@ function Ensure-Python {
 
 function Ensure-PythonPackages {
     Say "檢查 Python 套件…"
-    & $script:Python -c "import flask, docx, lxml, markdown, json_repair" 2>$null
+    & $script:Python -c "import flask, docx, lxml, markdown" 2>$null
     if ($LASTEXITCODE -eq 0) {
         Say "Python 套件：已就緒"
         return
@@ -85,7 +85,7 @@ function Ensure-PythonPackages {
     Say "安裝 Python 套件（requirements.txt）…"
     & $script:Python -m pip install -r (Join-Path $Root "requirements.txt")
     if ($LASTEXITCODE -ne 0) { Die "Python 套件安裝失敗" }
-    & $script:Python -c "import flask, docx, lxml, markdown, json_repair"
+    & $script:Python -c "import flask, docx, lxml, markdown"
     if ($LASTEXITCODE -ne 0) { Die "Python 套件安裝失敗" }
 }
 

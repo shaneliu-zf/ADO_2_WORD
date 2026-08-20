@@ -3,7 +3,7 @@
     v-model:visible="visibleModel"
     :header="dialogHeader"
     :style="{ width: '80vw', maxWidth: '1000px' }"
-    :contentStyle="{ height: 'calc(85vh - 6rem)', overflowY: 'auto' }"
+    :contentStyle="{ height: 'calc(85vh - 6rem)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }"
     modal
     dismissableMask
     @hide="onClose"
@@ -20,7 +20,7 @@
       {{ loadError }}
     </div>
 
-    <div v-else-if="mode === 'ado'" class="tab-content">
+    <div v-else-if="mode === 'ado'" class="tab-content ado-mode">
       <HtmlPreview v-if="htmlContent" :html="htmlContent" class="html-preview" />
       <div v-else class="state-msg">無 HTML 資料</div>
     </div>
@@ -155,6 +155,12 @@ async function handleSave(updated?: Report) {
   font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
 }
 
+/* ADO 原文模式：撐滿 dialog 高度，overflow 交給 iframe */
+.tab-content.ado-mode {
+  height: 100%;
+  overflow: hidden;
+}
+
 .tab-toolbar {
   display: flex;
   gap: 0.5rem;
@@ -162,7 +168,9 @@ async function handleSave(updated?: Report) {
 }
 
 .html-preview {
-  height: 620px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
 /* ── State messages ─────────────────────────────────────────────────────────── */

@@ -208,6 +208,11 @@ def useful_comments(item: dict[str, Any]) -> str:
     return "\n\n".join(blocks)
 
 
+# 每個 ADO 的 user content 字元上限（description / comments 各自截斷）
+_DESC_CHAR_LIMIT = 3000
+_COMMENT_CHAR_LIMIT = 1000
+
+
 def build_llm_text(item: dict[str, Any], meta: dict[str, Any]) -> str:
     fields = item.get("fields") or {}
     images = item.get("images") or {}
@@ -219,9 +224,13 @@ def build_llm_text(item: dict[str, Any], meta: dict[str, Any]) -> str:
         apply_image_map(stringify(fields.get("System.Description")), images)
     )
     if description:
+        if len(description) > _DESC_CHAR_LIMIT:
+            description = description[:_DESC_CHAR_LIMIT] + "\n…（內容過長已截斷）"
         parts.append("【描述】\n" + description)
     comments = useful_comments(item)
     if comments:
+        if len(comments) > _COMMENT_CHAR_LIMIT:
+            comments = comments[:_COMMENT_CHAR_LIMIT] + "\n…（留言過長已截斷）"
         parts.append("【留言】\n" + comments)
     return "\n\n".join(parts).strip() + "\n"
 
@@ -244,8 +253,6 @@ def call_test_extract(config: dict[str, Any], user_content: str) -> dict[str, An
             {"role": "user", "content": user_content},
         ],
         config=config,
-        max_tokens=16384,
-        timeout=180,
     )
 
 
@@ -395,7 +402,19 @@ def build_report(
 def process_group(work_item_ids: list[int], config: dict[str, Any]) -> Path:
     items = [read_work_item(work_item_id) for work_item_id in work_item_ids]
     metas = [extract_meta(item) for item in items]
-    llm_data = call_test_extract(config, build_group_llm_input(items, metas))
+    user_content = build_group_llm_input(items, metas)
+    last_err: Exception | None = None
+    for attempt in range(3):
+        if attempt:
+            log(f"  [retry {attempt}] ADO #{', '.join(str(i) for i in work_item_ids)} 重新呼叫 LLM …")
+        try:
+            llm_data = call_test_extract(config, user_content)
+            last_err = None
+            break
+        except (ValueError, json.JSONDecodeError) as exc:
+            last_err = exc
+    if last_err is not None:
+        raise last_err
     report = build_report(items, metas, llm_data)
 
     primary_id = min(work_item_ids)
@@ -426,7 +445,6 @@ def run_report_by_llm(groups: list[list[int]], config: dict[str, Any] | None = N
         if len(group) > 1:
             log(f"  合併處理：{group_label}")
     processed_paths: dict[int, Path] = {}
-    failures: list[str] = []
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         future_map = {
             executor.submit(process_group, group, cfg): index
@@ -435,21 +453,12 @@ def run_report_by_llm(groups: list[list[int]], config: dict[str, Any] | None = N
         for future in as_completed(future_map):
             index = future_map[future]
             group = groups[index]
-            group_label = ", ".join(str(value) for value in group)
-            try:
-                path = future.result()
-            except Exception as exc:  # noqa: BLE001 — 單組失敗不丢掉其他組
-                message = f"Work Item {group_label} 失敗：{exc}"
-                failures.append(message)
-                log(message)
-                continue
+            path = future.result()
             processed_paths[index] = path
+            group_label = ", ".join(str(value) for value in group)
             log(f"完成分析 Work Item {group_label}")
             log(f"  已寫入：{path}")
     processed_groups = [groups[index] for index in range(len(groups)) if index in processed_paths]
-    if failures:
-        log_stage_done(f"REPORT 部分完成，成功 {len(processed_groups)} 組、失敗 {len(failures)} 組")
-        raise RuntimeError("\n".join(failures))
     log_stage_done(f"REPORT 完成，共 {len(processed_groups)} 組")
     return processed_groups
 

@@ -170,7 +170,11 @@ def render_rich_html(text: str) -> str:
     extensions = ["extra", "sane_lists"]
     if not looks_like_html(text or ""):
         extensions.append("nl2br")
-    return markdown.markdown(fragment, extensions=extensions)
+    try:
+        return markdown.markdown(fragment, extensions=extensions)
+    except Exception:
+        # markdown 解析失敗（特殊字元、超長輸入等）：fallback 回原始 HTML fragment
+        return fragment
 
 
 def prefix_static_media(html_text: str) -> str:

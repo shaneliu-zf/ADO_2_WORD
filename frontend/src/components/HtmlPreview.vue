@@ -26,9 +26,10 @@ const srcdoc = computed(() => {
 <style scoped>
 .html-preview-frame {
   width: 100%;
-  height: 600px;
+  height: 100%;
   border: none;
   border-radius: 4px;
   background: #fff;
+  display: block;
 }
 </style>

@@ -30,7 +30,12 @@
         <span class="step-body">
           <strong>{{ s.label }}</strong>
           <span class="step-hint">{{ s.hint }}</span>
-          <span v-if="pipelineBusy && currentStep === s.index" class="step-progress"><span /></span>
+          <span
+            v-if="shouldShowStepBar(s.index)"
+            class="step-progress"
+          >
+            <span :class="stepBarClass(s.index)" :style="stepBarStyle(s.index)" />
+          </span>
         </span>
       </li>
     </ol>
@@ -46,25 +51,23 @@
         @click="pipelineStore.prevStep()"
       />
       <Button
+        v-if="!isRunning"
         :label="executeLabel"
         icon="pi pi-play"
         class="btn-run"
         severity="success"
         :loading="pipelineBusy"
-        :disabled="isRunning"
         @click="runCurrent()"
       />
+      <Button
+        v-else
+        label="中止執行"
+        icon="pi pi-stop-circle"
+        class="btn-run"
+        severity="danger"
+        @click="pipelineStore.abortScript()"
+      />
     </div>
-
-    <Button
-      v-if="isRunning"
-      label="中止執行"
-      icon="pi pi-stop-circle"
-      severity="danger"
-      class="abort-btn"
-      size="small"
-      @click="pipelineStore.abortScript()"
-    />
 
     <div class="log-toggle">
       <Checkbox v-model="showLog" inputId="show-log" binary />
@@ -94,7 +97,7 @@ import { storeToRefs } from 'pinia'
 const pipelineStore = usePipelineStore()
 const itemsStore = useItemsStore()
 const toast = useToast()
-const { currentStep, reachedStep, isRunning, runningStep, showLog, status, statusKind } = storeToRefs(pipelineStore)
+const { currentStep, reachedStep, isRunning, runningStep, showLog, status, statusKind, stepProgress } = storeToRefs(pipelineStore)
 
 const pipelineBusy = computed(() => isRunning.value && (runningStep.value ?? -1) >= 0)
 
@@ -121,6 +124,29 @@ const progressStyle = computed(() => {
   if (pipelineBusy.value) return {}
   return { width: `${(Math.min(reachedStep.value, 4) / 4) * 100}%` }
 })
+
+function shouldShowStepBar(index: number): boolean {
+  return (pipelineBusy.value && currentStep.value === index) || reachedStep.value >= index
+}
+
+function stepBarClass(index: number): Record<string, boolean> {
+  const isActive = pipelineBusy.value && currentStep.value === index
+  const isDone = reachedStep.value >= index && !isActive
+  // indeterminate：執行中但無進度數字（group / word）
+  const isIndeterminate = isActive && stepProgress.value === null
+  return { done: isDone, indeterminate: isIndeterminate }
+}
+
+function stepBarStyle(index: number): Record<string, string> {
+  const isActive = pipelineBusy.value && currentStep.value === index
+  const isDone = reachedStep.value >= index && !isActive
+  if (isDone) return { width: '100%' }
+  if (isActive && stepProgress.value !== null) {
+    return { width: `${stepProgress.value}%` }
+  }
+  // indeterminate：寬度由 CSS animation 控制，不設 inline width
+  return {}
+}
 
 function stepKind(index: number): string {
   const kinds: string[] = []
@@ -352,9 +378,24 @@ function runAll() {
 .step-progress > span {
   display: block;
   height: 100%;
-  width: 40%;
+  width: 0%;
   border-radius: 999px;
   background: var(--p-green-500, #22c55e);
+  transition: width 0.35s ease;
+}
+
+/* 有實際進度數字時：由 inline style 控制 width，transition 提供平滑效果 */
+
+/* 已完成：滿格靜態 */
+.step-progress > span.done {
+  width: 100%;
+  transition: none;
+}
+
+/* 無進度數字（group / word）：indeterminate 滑動動畫 */
+.step-progress > span.indeterminate {
+  width: 40%;
+  transition: none;
   animation: progress-slide 1.1s ease-in-out infinite;
 }
 
@@ -389,11 +430,6 @@ function runAll() {
 
 .btn-run {
   flex: 1.4;
-}
-
-.abort-btn {
-  margin: 0 1rem;
-  flex-shrink: 0;
 }
 
 .log-toggle {

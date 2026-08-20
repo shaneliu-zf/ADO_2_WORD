@@ -407,4 +407,13 @@ function imageSrc(src: string): string {
   justify-content: flex-end;
   padding-top: 0.5rem;
 }
+
+/* readonly 模式：輸入框反灰 */
+:deep(.p-inputtext[readonly]),
+:deep(.p-textarea[readonly]) {
+  background: var(--p-surface-100, #f3f4f6);
+  color: var(--p-text-secondary-color, #6b7280);
+  cursor: default;
+  border-color: var(--p-surface-200, #e5e7eb);
+}
 </style>

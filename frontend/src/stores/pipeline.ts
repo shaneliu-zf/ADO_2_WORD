@@ -16,6 +16,12 @@ function stepLabel(index: number): string {
   return STEP_DEFS.find(s => s.index === index)?.label ?? ''
 }
 
+// 從 log 解析各步驟進度的 pattern
+const TOTAL_FETCH_RE = /抓取 ADO JSON（(\d+) 筆）/
+const DONE_FETCH_RE = /^完成 Work Item \d/
+const TOTAL_REPORT_RE = /共 (\d+) 組，開始處理/
+const DONE_REPORT_RE = /^完成分析 Work Item /
+
 export const usePipelineStore = defineStore('pipeline', () => {
   const currentStep = ref(1)
   const reachedStep = ref(0)
@@ -25,6 +31,11 @@ export const usePipelineStore = defineStore('pipeline', () => {
   const showLog = ref(false)
   const status = ref('從下載資料開始，每次只處理目前勾選的項目。')
   const statusKind = ref<'info' | 'error' | ''>('')
+  // 當前執行步驟的進度 0-100，null 表示無法解析（indeterminate）
+  const stepProgress = ref<number | null>(null)
+  // 解析進度用的內部狀態
+  let _progressTotal = 0
+  let _progressDone = 0
 
   function setStatus(message: string, kind: 'info' | 'error' | '' = '') {
     status.value = message
@@ -40,11 +51,39 @@ export const usePipelineStore = defineStore('pipeline', () => {
     applySession(await fetchSession())
   }
 
+  function _parseLogProgress(line: string, script: string): void {
+    // 全流程 main 依序執行 fetch → group → report → word，
+    // 每次進入新步驟時 total 會被重設
+    const fetchTotal = TOTAL_FETCH_RE.exec(line)
+    if (fetchTotal) {
+      _progressTotal = parseInt(fetchTotal[1], 10)
+      _progressDone = 0
+      stepProgress.value = 0
+      return
+    }
+    const reportTotal = TOTAL_REPORT_RE.exec(line)
+    if (reportTotal) {
+      _progressTotal = parseInt(reportTotal[1], 10)
+      _progressDone = 0
+      stepProgress.value = 0
+      return
+    }
+    if (DONE_FETCH_RE.test(line) || DONE_REPORT_RE.test(line)) {
+      if (_progressTotal > 0) {
+        _progressDone = Math.min(_progressDone + 1, _progressTotal)
+        stepProgress.value = Math.round((_progressDone / _progressTotal) * 100)
+      }
+    }
+  }
+
   async function runScript(script: string, ids: number[], stepIndex: number, workingIds?: number[]): Promise<boolean> {
     if (isRunning.value) return false
     isRunning.value = true
     runningStep.value = stepIndex
     logs.value = []
+    stepProgress.value = null
+    _progressTotal = 0
+    _progressDone = 0
     let failed = false
     const label =
       stepIndex === 0 ? '全流程自動完成' : stepIndex < 0 ? '列出 ID' : stepLabel(stepIndex)
@@ -89,6 +128,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
             }
             if (event.type === 'log' && event.line != null) {
               logs.value.push(event.line)
+              _parseLogProgress(event.line, script)
             } else if (event.type === 'error') {
               failed = true
               logs.value.push(`[Error] ${event.message ?? ''}`)
@@ -124,6 +164,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     } finally {
       isRunning.value = false
       runningStep.value = null
+      stepProgress.value = null
     }
     return !failed
   }
@@ -171,6 +212,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     showLog,
     status,
     statusKind,
+    stepProgress,
     applySession,
     loadSession,
     runScript,

@@ -51,26 +51,55 @@ export const useItemsStore = defineStore('items', () => {
   })
 
   const tableRows = computed<AdoTableRow[]>(() => {
-    const rows = filteredItems.value
-      .map(item => {
-        const related = relatedById.value.get(item.id)
-        const groupIds = related?.ids?.length ? related.ids : [item.id]
-        const relationKind = relationKindOf(item)
-        return {
-          ...item,
-          groupKey: related?.primary_id ?? item.id,
-          groupSize: groupIds.length,
-          groupIds,
-          redmineId: related?.redmine_id ?? '',
-          isGroupHead: false,
-          groupHasReport: false,
-          relationKind,
-        }
-      })
-      .sort((a, b) => {
-        if (a.groupKey !== b.groupKey) return a.groupKey - b.groupKey
-        return a.id - b.id
-      })
+    const mapped = filteredItems.value.map(item => {
+      const related = relatedById.value.get(item.id)
+      const groupIds = related?.ids?.length ? related.ids : [item.id]
+      const relationKind = relationKindOf(item)
+      return {
+        ...item,
+        groupKey: related?.primary_id ?? item.id,
+        groupSize: groupIds.length,
+        groupIds,
+        redmineId: related?.redmine_id ?? item.redmineId ?? '',
+        isGroupHead: false,
+        groupHasReport: false,
+        relationKind,
+      }
+    })
+
+    // 計算每組的 report 狀態
+    const reportByGroup = new Map<number, boolean>()
+    for (const row of mapped) {
+      if (row.hasReport) reportByGroup.set(row.groupKey, true)
+    }
+
+    // 依排序欄位以 group 為單位排序
+    const field = sortBy.value as keyof AdoTableRow
+    const dir = sortDir.value
+
+    const groupHeads = new Map<number, AdoTableRow>()
+    for (const row of mapped) {
+      if (!groupHeads.has(row.groupKey)) groupHeads.set(row.groupKey, row)
+    }
+
+    const sortedGroupKeys = [...groupHeads.keys()].sort((a, b) => {
+      const ra = groupHeads.get(a)!
+      const rb = groupHeads.get(b)!
+      const va = ra[field] ?? ra.groupKey
+      const vb = rb[field] ?? rb.groupKey
+      if (typeof va === 'string' && typeof vb === 'string') {
+        return dir * va.localeCompare(vb)
+      }
+      return dir * ((va as number) - (vb as number))
+    })
+
+    // 按排序好的 group 順序重組列，組內按 id 升序
+    const rows: AdoTableRow[] = []
+    for (const gk of sortedGroupKeys) {
+      const groupRows = mapped.filter(r => r.groupKey === gk).sort((a, b) => a.id - b.id)
+      rows.push(...groupRows)
+    }
+
     const counts = new Map<number, number>()
     for (const row of rows) {
       counts.set(row.groupKey, (counts.get(row.groupKey) ?? 0) + 1)

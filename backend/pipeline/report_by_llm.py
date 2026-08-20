@@ -25,13 +25,14 @@ from backend.utils.pipeline_io import (
     run_pipeline_main,
     write_pipeline_json,
 )
-from backend.utils.report_schema import ChangeEntry, Report, TestItem, TestStep
+from backend.utils.report_schema import CommitEntry, Report, TestItem, TestStep
 from backend.utils.work_item_parser import (
     TAG_RE,
     ADO_COLON_IMG_RE,
     ADO_COLON_SRC_RE,
     MD_IMG_RE,
     apply_image_map,
+    extract_commits,
     extract_redmine,
     plain_text,
     read_work_item,
@@ -310,53 +311,34 @@ def normalize_test_steps(raw_steps: Any, allowed_images: set[str]) -> list[TestS
     return steps
 
 
-HISTORY_FIELD_LABELS: dict[str, str] = {
-    "System.State": "狀態",
-    "System.AssignedTo": "指派",
-    "System.Reason": "原因",
-    "relation": "關聯",
-}
-
-HISTORY_KEEP_FIELDS = {
-    "System.State",
-    "System.AssignedTo",
-    "System.Reason",
-    "relation",
-}
-
-
-def extract_change_history(items: list[dict[str, Any]]) -> list[ChangeEntry]:
-    """從 ADO JSON history 抽取狀態、指派、關聯等重要變動，依時間排序。"""
-    entries: list[ChangeEntry] = []
+def collect_commits(items: list[dict[str, Any]]) -> list[CommitEntry]:
+    """從 ADO JSON 的關聯 commit 整理進報告，不經過 Bob。"""
+    grouped = len(items) > 1
+    entries: list[CommitEntry] = []
+    seen: set[str] = set()
     for item in items:
         ado_id = int(item.get("id") or 0)
-        prefix = f"ADO#{ado_id} " if len(items) > 1 else ""
-        for entry in item.get("history") or []:
-            if not isinstance(entry, dict):
+        raw = item.get("commits")
+        commits = raw if isinstance(raw, list) and raw else extract_commits(item)
+        for commit in commits:
+            if not isinstance(commit, dict):
                 continue
-            date = as_str(entry.get("date"))
-            by = as_str(entry.get("by"))
-            for change in entry.get("changes") or []:
-                if not isinstance(change, dict):
-                    continue
-                field = as_str(change.get("field"))
-                if field not in HISTORY_KEEP_FIELDS:
-                    continue
-                old_val = as_str(change.get("from"))
-                new_val = as_str(change.get("to"))
-                if field == "relation":
-                    combined = old_val + new_val
-                    if "#" not in combined:
-                        continue
-                label = prefix + HISTORY_FIELD_LABELS.get(field, field)
-                entries.append({
-                    "date": date,
-                    "by": by,
-                    "field": label,
-                    "old": old_val,
-                    "new": new_val,
-                })
-    entries.sort(key=lambda e: e["date"])
+            sha = as_str(commit.get("sha") or commit.get("commitId")).lower()
+            if not sha or sha in seen:
+                continue
+            seen.add(sha)
+            message = as_str(commit.get("message") or commit.get("comment"))
+            entry: CommitEntry = {
+                "sha": sha,
+                "sha_short": as_str(commit.get("sha_short")) or sha[:8],
+                "message": message.splitlines()[0].strip() if message else "",
+                "author": as_str(commit.get("author")),
+                "date": as_str(commit.get("date")),
+                "url": as_str(commit.get("url")),
+            }
+            if grouped and ado_id:
+                entry["ado_id"] = ado_id
+            entries.append(entry)
     return entries
 
 
@@ -394,7 +376,7 @@ def build_report(
         "reviewer": primary["reviewer"],
         "test_items": normalize_test_items(llm_data.get("test_items"), state),
         "test_steps": normalize_test_steps(llm_data.get("test_steps"), allowed_images),
-        "change_history": extract_change_history(items),
+        "commits": collect_commits(items),
     }
     return report
 

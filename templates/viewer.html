@@ -131,6 +131,32 @@
       return fieldLabel(key);
     }
 
+    function formatCommitDate(raw) {
+      const match = String(raw || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!match) return stringify(raw);
+      return `${match[1]}/${Number(match[2])}/${Number(match[3])}`;
+    }
+
+    function renderCommits(commits) {
+      const rows = (commits || [])
+        .map((entry) => {
+          const sha = escapeHtml(stringify(entry.sha_short || (entry.sha || "").slice(0, 8)));
+          const message = escapeHtml(stringify(entry.message));
+          const author = escapeHtml(stringify(entry.author));
+          const date = escapeHtml(formatCommitDate(entry.date));
+          const ado = entry.ado_id ? `<td>#${escapeHtml(String(entry.ado_id))}</td>` : "";
+          const shaCell = entry.url
+            ? `<a href="${escapeHtml(stringify(entry.url))}">${sha}</a>`
+            : sha;
+          return `<tr>${ado}<td>${shaCell}</td><td>${message}</td><td>${author}</td><td>${date}</td></tr>`;
+        })
+        .join("");
+      if (!rows) return "";
+      const showAdo = (commits || []).some((entry) => entry.ado_id);
+      const adoHead = showAdo ? "<th>ADO</th>" : "";
+      return `<h2>Commit</h2><table class="index"><tr>${adoHead}<th>SHA</th><th>訊息</th><th>作者</th><th>日期</th></tr>${rows}</table>`;
+    }
+
     function rewriteImages(text, images) {
       if (!text) return "";
       let out = text;
@@ -440,6 +466,7 @@
         ${comments || '<p class="empty">沒有留言</p>'}
         <h2>關聯</h2>
         ${relations ? `<ul>${relations}</ul>` : '<p class="empty">沒有關聯</p>'}
+        ${renderCommits(item.commits)}
       `;
     }
 
@@ -478,16 +505,6 @@
           ${images ? `<div class="step-images">${images}</div>` : ""}
         </article>`;
       }).join("");
-      const historyRows = (report.change_history || []).map((entry) => {
-        const date = escapeHtml(stringify(entry.date).replace("T", " ").replace(/Z$/, ""));
-        return `<tr>
-          <td style="white-space:nowrap">${date}</td>
-          <td>${escapeHtml(stringify(entry.by))}</td>
-          <td>${escapeHtml(stringify(entry.field))}</td>
-          <td>${escapeHtml(stringify(entry.old))}</td>
-          <td>${escapeHtml(stringify(entry.new))}</td>
-        </tr>`;
-      }).join("");
       return `
         <h1>${escapeHtml(heading)}</h1>
         <p class="sub">Bob 整理後的測試報告</p>
@@ -499,10 +516,7 @@
           : '<p class="empty">沒有測試項目</p>'}
         <h2>測試步驟</h2>
         ${steps || '<p class="empty">沒有測試步驟</p>'}
-        <h2>變動紀錄</h2>
-        ${historyRows
-          ? `<table class="index history"><tr><th>時間</th><th>操作者</th><th>欄位</th><th>原值</th><th>新值</th></tr>${historyRows}</table>`
-          : '<p class="empty">沒有變動紀錄</p>'}
+        ${renderCommits(report.commits)}
       `;
     }
 

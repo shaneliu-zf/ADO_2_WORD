@@ -347,26 +347,38 @@ def fill_attachments(doc: Document, attach_heading: etree._Element, report: dict
             cursor = add_picture_after(doc, cursor, image_path)
 
 
-def format_history_date(raw: str) -> str:
-    """9999-01-01T… → （最新）；正常 ISO → YYYY/M/D HH:MM"""
-    text = (raw or "").strip()
-    if text.startswith("9999"):
-        return "（最新）"
-    match = re.match(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})", text)
+def format_commit_date(raw: str) -> str:
+    match = re.match(r"(\d{4})-(\d{2})-(\d{2})", (raw or "").strip())
     if match:
-        y, m, d, hh, mm = match.groups()
-        return f"{y}/{int(m)}/{int(d)} {hh}:{mm}"
-    return text
+        year, month, day = match.groups()
+        return f"{year}/{int(month)}/{int(day)}"
+    return (raw or "").strip()
 
 
-def fill_change_history(doc: Document, heading_elm: etree._Element, report: dict[str, Any]) -> None:
-    set_paragraph_bold(heading_elm, bold=True)
-    history = report.get("change_history") or []
-    if not history:
-        add_paragraph_after(doc, heading_elm, "（無變動紀錄）", "Heading 3")
-        return
+def last_block_element(start: etree._Element) -> etree._Element:
+    last_elm = start
+    while last_elm.getnext() is not None and last_elm.getnext().tag != qn("w:sectPr"):
+        candidate = last_elm.getnext()
+        if candidate.tag == qn("w:p") and paragraph_style(candidate) in {"2", "4"}:
+            break
+        last_elm = candidate
+    return last_elm
+
+
+def add_heading4_after(doc: Document, after: etree._Element, text: str) -> etree._Element:
+    heading = add_paragraph_after(doc, after, text, "Heading 2")
+    p_pr = ensure_child(heading, "w:pPr")
+    p_style = ensure_child(p_pr, "w:pStyle")
+    p_style.set(qn("w:val"), "4")
+    set_paragraph_bold(heading, bold=True)
+    return heading
+
+
+def fill_commits(doc: Document, heading_elm: etree._Element, commits: list[dict[str, Any]]) -> None:
     from docx.table import Table as DocxTable
 
+    show_ado = any(entry.get("ado_id") for entry in commits)
+    headers = (["ADO"] if show_ado else []) + ["SHA", "訊息", "作者", "日期"]
     tbl_elm = OxmlElement("w:tbl")
     tbl_pr = OxmlElement("w:tblPr")
     tbl_elm.append(tbl_pr)
@@ -380,33 +392,37 @@ def fill_change_history(doc: Document, heading_elm: etree._Element, report: dict
     look = OxmlElement("w:tblLook")
     look.set(qn("w:val"), "04A0")
     tbl_pr.append(look)
-
     heading_elm.addnext(tbl_elm)
-    table = DocxTable(tbl_elm, doc)
 
-    headers = ["時間", "操作者", "欄位", "原值", "新值"]
-    total_rows = 1 + len(history)
-    for _ in range(total_rows):
+    for _ in range(1 + len(commits)):
         row_elm = OxmlElement("w:tr")
-        for _ in range(len(headers)):
+        for _ in headers:
             tc = OxmlElement("w:tc")
-            p = OxmlElement("w:p")
-            tc.append(p)
+            tc.append(OxmlElement("w:p"))
             row_elm.append(tc)
         tbl_elm.append(row_elm)
 
     table = DocxTable(tbl_elm, doc)
     for col_idx, header in enumerate(headers):
         set_cell_text(table.rows[0].cells[col_idx], header, align="center", font_size=FONT_SIZE)
-    for row_idx, entry in enumerate(history, start=1):
+    for row_idx, entry in enumerate(commits, start=1):
         row = table.rows[row_idx]
-        set_cell_text(row.cells[0], format_history_date(entry.get("date", "")), align="left", font_size=FONT_SIZE)
-        set_cell_text(row.cells[1], entry.get("by", ""), align="left", font_size=FONT_SIZE)
-        set_cell_text(row.cells[2], entry.get("field", ""), align="left", font_size=FONT_SIZE)
-        set_cell_text(row.cells[3], entry.get("old", ""), align="left", font_size=FONT_SIZE)
-        set_cell_text(row.cells[4], entry.get("new", ""), align="left", font_size=FONT_SIZE)
+        values = []
+        if show_ado:
+            ado_id = entry.get("ado_id")
+            values.append(f"#{ado_id}" if ado_id else "")
+        values.extend(
+            [
+                str(entry.get("sha_short") or (entry.get("sha") or "")[:8]),
+                str(entry.get("message") or ""),
+                str(entry.get("author") or ""),
+                format_commit_date(str(entry.get("date") or "")),
+            ]
+        )
+        for col_idx, value in enumerate(values):
+            set_cell_text(row.cells[col_idx], value, align="left", font_size=FONT_SIZE)
 
-    col_widths = [2000, 1800, 1400, 2200, 2200]
+    col_widths = ([1200] if show_ado else []) + [1600, 4200, 1800, 1800]
     set_tbl_width(tbl_elm, col_widths)
 
 
@@ -520,18 +536,10 @@ def fill_block(doc: Document, block: list[etree._Element], report: dict[str, Any
         if parent is not None:
             parent.remove(elm)
     fill_attachments(doc, attach_heading, report)
-
-    last_elm = attach_heading
-    while last_elm.getnext() is not None and last_elm.getnext().tag != qn("w:sectPr"):
-        candidate = last_elm.getnext()
-        if candidate.tag == qn("w:p") and paragraph_style(candidate) in {"2", "4"}:
-            break
-        last_elm = candidate
-    history_heading = add_paragraph_after(doc, last_elm, "變動紀錄", "Heading 2")
-    p_pr = ensure_child(history_heading, "w:pPr")
-    p_style = ensure_child(p_pr, "w:pStyle")
-    p_style.set(qn("w:val"), "4")
-    fill_change_history(doc, history_heading, report)
+    commits = [entry for entry in (report.get("commits") or []) if isinstance(entry, dict)]
+    if commits:
+        heading = add_heading4_after(doc, last_block_element(attach_heading), "Commit")
+        fill_commits(doc, heading, commits)
 
 
 def paragraph_style(p_elm: etree._Element) -> str:
@@ -598,14 +606,14 @@ def collect_ado_outline(body: etree._Element) -> list[dict[str, Any]]:
         style = paragraph_style(child)
         text = elm_text(child).strip()
         if style == "2" and text.startswith("ADO"):
-            current = {"heading": child, "title": text, "items": None, "attach": None, "history": None}
+            current = {"heading": child, "title": text, "items": None, "attach": None, "commits": None}
             outline.append(current)
         elif current is not None and style == "4" and text == "測試項目":
             current["items"] = child
         elif current is not None and style == "4" and text == "測試附件":
             current["attach"] = child
-        elif current is not None and style == "4" and text == "變動紀錄":
-            current["history"] = child
+        elif current is not None and style == "4" and text == "Commit":
+            current["commits"] = child
     return outline
 
 
@@ -634,8 +642,10 @@ def refresh_toc(doc: Document) -> None:
         elif ado_toc_paras and "測試附件" in text:
             proto_by_kind.setdefault("attach", para)
             ado_toc_paras.append(para)
+        elif ado_toc_paras and text.strip() == "Commit":
+            proto_by_kind.setdefault("commits", para)
+            ado_toc_paras.append(para)
         elif ado_toc_paras and "變動紀錄" in text:
-            proto_by_kind.setdefault("history", para)
             ado_toc_paras.append(para)
 
     if "heading" not in proto_by_kind:
@@ -653,10 +663,10 @@ def refresh_toc(doc: Document) -> None:
             ("heading", f"{index}", block["title"], block["heading"]),
             ("items", f"{index}.1", "測試項目", block.get("items")),
             ("attach", f"{index}.2", "測試附件", block.get("attach")),
-            ("history", f"{index}.3", "變動紀錄", block.get("history")),
+            ("commits", f"{index}.3", "Commit", block.get("commits")),
         ]
         for kind, number, title, heading_elm in entries:
-            proto = proto_by_kind.get(kind)
+            proto = proto_by_kind.get(kind) or (proto_by_kind.get("attach") if kind == "commits" else None)
             if proto is None or heading_elm is None:
                 continue
             bookmark = f"_Toc{next_id}"

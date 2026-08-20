@@ -14,11 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from backend.utils.ado_client import auth_header, fetch_comments, fetch_updates, fetch_work_item
+from backend.utils.ado_client import auth_header, fetch_comments, fetch_git_commit, fetch_updates, fetch_work_item
 from backend.utils.config_io import load_config
 from backend.utils.paths import ADO_DIR, STYLE_PATH, VIEWER_HTML_PATH
 from backend.utils.pipeline_io import log, log_stage, log_stage_done, normalize_ids, read_pipeline_json, run_pipeline_main, write_pipeline_json
-from backend.utils.work_item_parser import RELATED_ID_RE, collect_item_image_urls, stringify
+from backend.utils.work_item_parser import RELATED_ID_RE, collect_item_image_urls, extract_commits, stringify
 
 FETCH_WORKERS = 12
 IMAGE_WORKERS = 6
@@ -147,6 +147,40 @@ def download_images(
     return url_map
 
 
+def enrich_commits(item: dict[str, Any], config: dict[str, Any], authorization: str) -> list[dict[str, str]]:
+    """從關聯抽出 Git commit，並盡量補上訊息、作者、網址。"""
+    commits = extract_commits(item)
+    pending = [commit for commit in commits if commit.get("repo_id") and commit.get("sha")]
+    if not pending:
+        return commits
+
+    def fill_one(commit: dict[str, str]) -> dict[str, str]:
+        try:
+            payload = fetch_git_commit(config, authorization, commit["repo_id"], commit["sha"])
+        except Exception as exc:
+            log(f"  Commit 詳情失敗，保留 SHA：{commit.get('sha_short') or commit.get('sha')}（{exc}）")
+            return commit
+        author = payload.get("author") if isinstance(payload.get("author"), dict) else {}
+        message = stringify(payload.get("comment"))
+        if message:
+            commit["message"] = message.splitlines()[0].strip()
+        if author.get("name"):
+            commit["author"] = stringify(author.get("name"))
+        if author.get("date"):
+            commit["date"] = stringify(author.get("date"))
+        web = stringify(payload.get("remoteUrl") or payload.get("url"))
+        if web:
+            commit["url"] = web
+        return commit
+
+    workers = min(IMAGE_WORKERS, len(pending))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(fill_one, commit): commit for commit in pending}
+        for future in as_completed(futures):
+            future.result()
+    return commits
+
+
 def skip_history_field(key: str) -> bool:
     return key in HISTORY_SKIP_FIELDS or key.startswith("WEF_")
 
@@ -229,9 +263,18 @@ def simplify(
     }
 
 
-def save_work_item(item: dict[str, Any], authorization: str, skip_download: bool = False) -> Path:
+def save_work_item(
+    item: dict[str, Any],
+    authorization: str,
+    skip_download: bool = False,
+    config: dict[str, Any] | None = None,
+) -> Path:
     work_item_id = item["id"]
     media_dir = ADO_DIR / f"work_item_{work_item_id}_files"
+    if config is not None:
+        item["commits"] = enrich_commits(item, config, authorization)
+    else:
+        item["commits"] = extract_commits(item)
     item["images"] = download_images(item, authorization, media_dir, skip_download=skip_download)
     path = ADO_DIR / f"work_item_{work_item_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,7 +323,7 @@ def fetch_one_work_item(
         updates_f = pool.submit(fetch_updates, config, authorization, work_item_id)
         item = simplify(work_item_f.result(), comments_f.result(), updates_f.result())
     item["fetched_at"] = fetched_at
-    path = save_work_item(item, authorization, skip_download=no_images)
+    path = save_work_item(item, authorization, skip_download=no_images, config=config)
     return {
         "work_item_id": work_item_id,
         "item": item,
@@ -320,7 +363,7 @@ def run_fetch(work_item_ids: list[int], *, no_images: bool = False) -> list[int]
             log(
                 f"  標題：{item.get('title')}\n"
                 f"  欄位數：{len(item.get('fields') or {})}　留言數：{item['comment_count']}　"
-                f"變動：{item.get('history_count') or 0}\n"
+                f"變動：{item.get('history_count') or 0}　Commit：{len(item.get('commits') or [])}\n"
                 f"  已寫入：{outcome['path']}"
             )
 

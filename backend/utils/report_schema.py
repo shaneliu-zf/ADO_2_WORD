@@ -24,12 +24,14 @@ class TestStep(TypedDict):
     images: list[str]
 
 
-class ChangeEntry(TypedDict):
+class CommitEntry(TypedDict, total=False):
+    sha: str
+    sha_short: str
+    message: str
+    author: str
     date: str
-    by: str
-    field: str
-    old: str
-    new: str
+    url: str
+    ado_id: int
 
 
 class Report(TypedDict):
@@ -45,7 +47,7 @@ class Report(TypedDict):
     reviewer: str
     test_items: list[TestItem]
     test_steps: list[TestStep]
-    change_history: list[ChangeEntry]
+    commits: list[CommitEntry]
 
 
 META_FIELDS: tuple[tuple[str, str], ...] = (

@@ -22,6 +22,7 @@ from backend.utils.paths import ADO_DIR, DOCX_DIR, JSON_DIR, STYLE_PATH
 from backend.utils.pipeline_io import add_log_sink, remove_log_sink
 from backend.utils.report_schema import find_report, validate_report
 from backend.utils.work_item_parser import (
+    extract_commits,
     extract_redmine,
     last_state_actor,
     looks_like_html,
@@ -507,6 +508,41 @@ def _field_rows(keys: list[str], fields: dict[str, Any], images: dict[str, str])
     return "".join(rows)
 
 
+def _format_commit_date(raw: str) -> str:
+    match = re.match(r"(\d{4})-(\d{2})-(\d{2})", (raw or "").strip())
+    if match:
+        year, month, day = match.groups()
+        return f"{year}/{int(month)}/{int(day)}"
+    return stringify(raw)
+
+
+def _render_commits_html(commits: Any) -> str:
+    rows = []
+    show_ado = False
+    for entry in commits or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("ado_id"):
+            show_ado = True
+        sha = html.escape(stringify(entry.get("sha_short") or stringify(entry.get("sha"))[:8]))
+        message = html.escape(stringify(entry.get("message")))
+        author = html.escape(stringify(entry.get("author")))
+        date = html.escape(_format_commit_date(stringify(entry.get("date"))))
+        ado = f"<td>#{html.escape(str(entry.get('ado_id')))}</td>" if entry.get("ado_id") else ""
+        url = stringify(entry.get("url"))
+        sha_cell = f'<a href="{html.escape(url)}">{sha}</a>' if url.startswith(("http://", "https://")) else sha
+        rows.append(f"<tr>{ado}<td>{sha_cell}</td><td>{message}</td><td>{author}</td><td>{date}</td></tr>")
+    if not rows:
+        return ""
+    ado_head = "<th>ADO</th>" if show_ado else ""
+    return (
+        "<h2>Commit</h2>"
+        f"<table class='index'><tr>{ado_head}<th>SHA</th><th>訊息</th><th>作者</th><th>日期</th></tr>"
+        + "".join(rows)
+        + "</table>"
+    )
+
+
 def _render_ado_html(item: dict[str, Any], work_item_id: int) -> str:
     fields = item.get("fields") or {}
     images = item.get("images") or {}
@@ -574,6 +610,7 @@ def _render_ado_html(item: dict[str, Any], work_item_id: int) -> str:
     {"".join(comments) or '<p class="empty">沒有留言</p>'}
     <h2>關聯</h2>
     {"<ul>" + "".join(relations) + "</ul>" if relations else '<p class="empty">沒有關聯</p>'}
+    {_render_commits_html(item.get("commits") or extract_commits(item))}
     """
     return f"""<!DOCTYPE html>
 <html lang="zh-Hant">

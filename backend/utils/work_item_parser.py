@@ -6,6 +6,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import urllib.parse
 from typing import Any
 
 from backend.utils.paths import ADO_DIR
@@ -17,6 +18,9 @@ TITLE_REDMINE_RE = re.compile(r"\(#?(\d{4,}(?:\.\d+)*)\)\s*$")
 # 留言常見 BUG #63474 / redmine 63474
 COMMENT_REDMINE_RE = re.compile(r"(?i)(?:redmine\s*#?\s*|BUG\s*#\s*)(\d{4,}(?:\.\d+)*)")
 RELATED_ID_RE = re.compile(r"(?i)/workItems/(\d+)")
+GIT_COMMIT_SHA_RE = re.compile(r"(?i)^[0-9a-f]{40}$")
+GIT_COMMIT_VSTFS_RE = re.compile(r"(?i)^vstfs:///Git/Commit/(.+)$")
+GIT_COMMIT_WEB_RE = re.compile(r"(?i)/_git/[^/]+/commit/([0-9a-f]{7,40})\b")
 IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE | re.DOTALL)
 MD_IMG_RE = re.compile(
     r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:[ \t]+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
@@ -236,6 +240,64 @@ def last_state_actor(item: dict[str, Any], state: str) -> str:
                 continue
             actor = stringify(entry.get("by"))
     return actor
+
+
+def parse_git_commit_ref(url: str) -> dict[str, str] | None:
+    """從 ArtifactLink 網址抽出 Git commit SHA（以及可能的 repo id）。"""
+    raw = html.unescape(str(url or "")).strip()
+    if not raw:
+        return None
+    decoded = urllib.parse.unquote(raw)
+    match = GIT_COMMIT_VSTFS_RE.match(decoded)
+    if match:
+        parts = [part for part in match.group(1).split("/") if part]
+        sha = parts[-1] if parts else ""
+        if GIT_COMMIT_SHA_RE.match(sha) and len(parts) >= 3:
+            return {"project_id": parts[0], "repo_id": parts[1], "sha": sha.lower()}
+        if GIT_COMMIT_SHA_RE.match(sha):
+            return {"project_id": "", "repo_id": "", "sha": sha.lower()}
+    web = GIT_COMMIT_WEB_RE.search(decoded)
+    if web:
+        sha = web.group(1).lower()
+        if len(sha) >= 7:
+            return {"project_id": "", "repo_id": "", "sha": sha}
+    return None
+
+
+def extract_commits(item: dict[str, Any]) -> list[dict[str, str]]:
+    """從 Work Item relations 抽出關聯的 Git commit。"""
+    commits: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for rel in item.get("relations") or []:
+        if not isinstance(rel, dict):
+            continue
+        parsed = parse_git_commit_ref(str(rel.get("url") or ""))
+        if parsed is None:
+            continue
+        sha = parsed["sha"]
+        if sha in seen:
+            continue
+        seen.add(sha)
+        attrs = rel.get("attributes") or {}
+        message = stringify(attrs.get("comment"))
+        commits.append(
+            {
+                "sha": sha,
+                "sha_short": sha[:8],
+                "message": message.splitlines()[0].strip() if message else "",
+                "author": "",
+                "date": stringify(
+                    attrs.get("resourceCreatedDate")
+                    or attrs.get("authorizedDate")
+                    or attrs.get("resourceModifiedDate")
+                ),
+                "url": str(rel.get("url") or ""),
+                "name": stringify(attrs.get("name")),
+                "repo_id": parsed.get("repo_id") or "",
+                "project_id": parsed.get("project_id") or "",
+            }
+        )
+    return commits
 
 
 def extract_related_ids(item: dict[str, Any]) -> list[int]:

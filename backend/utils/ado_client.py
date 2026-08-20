@@ -133,6 +133,23 @@ def fetch_updates(
         skip += len(batch)
 
 
+def fetch_git_commit(
+    config: dict[str, Any],
+    authorization: str,
+    repository_id: str,
+    commit_id: str,
+) -> dict[str, Any]:
+    url = api_url(
+        config,
+        "git/repositories",
+        repository_id,
+        "commits",
+        commit_id,
+        query={"api-version": WIT_API},
+    )
+    return request_json(url, authorization)
+
+
 def fetch_work_items_batch(
     config: dict[str, Any],
     authorization: str,

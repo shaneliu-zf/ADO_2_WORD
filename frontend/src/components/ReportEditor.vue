@@ -151,6 +151,34 @@
       @change="onStepImagesSelected"
     />
 
+    <!-- ── Commits ─────────────────────────────────────────────────────────── -->
+    <template v-if="(local.commits || []).length">
+      <div class="section-title">Commit</div>
+      <table class="commit-table">
+        <thead>
+          <tr>
+            <th v-if="showCommitAdo">ADO</th>
+            <th>SHA</th>
+            <th>訊息</th>
+            <th>作者</th>
+            <th>日期</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(entry, idx) in local.commits" :key="entry.sha || idx">
+            <td v-if="showCommitAdo">{{ entry.ado_id ? `#${entry.ado_id}` : '' }}</td>
+            <td>
+              <a v-if="isHttpUrl(entry.url)" :href="entry.url" target="_blank" rel="noreferrer">{{ entry.sha_short || entry.sha.slice(0, 8) }}</a>
+              <span v-else>{{ entry.sha_short || (entry.sha || '').slice(0, 8) }}</span>
+            </td>
+            <td>{{ entry.message }}</td>
+            <td>{{ entry.author }}</td>
+            <td>{{ formatCommitDate(entry.date) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </template>
+
     <!-- ── Save ────────────────────────────────────────────────────────────── -->
     <div v-if="showSave && !readonly" class="save-row">
       <Button label="儲存" icon="pi pi-save" :loading="saving" @click="emit('save', local)" />
@@ -182,6 +210,7 @@ const emit = defineEmits<{
 const local = ref<Report>(JSON.parse(JSON.stringify(props.report)))
 
 const readonly = computed(() => props.readonly === true)
+const showCommitAdo = computed(() => (local.value.commits || []).some((entry) => Boolean(entry.ado_id)))
 const showSave = computed(() => props.showSave !== false)
 const toast = useToast()
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -280,6 +309,16 @@ function imageSrc(src: string): string {
   if (!src) return ''
   if (/^(https?:|data:|\/)/i.test(src)) return src
   return `/static/ado/${src.replace(/^\.\//, '')}`
+}
+
+function isHttpUrl(url: string | undefined): boolean {
+  return Boolean(url && /^https?:\/\//i.test(url))
+}
+
+function formatCommitDate(raw: string | undefined): string {
+  const match = String(raw || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return raw || ''
+  return `${match[1]}/${Number(match[2])}/${Number(match[3])}`
 }
 </script>
 
@@ -406,6 +445,24 @@ function imageSrc(src: string): string {
   display: flex;
   justify-content: flex-end;
   padding-top: 0.5rem;
+}
+
+.commit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.commit-table th,
+.commit-table td {
+  border: 1px solid var(--p-surface-200);
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.commit-table th {
+  background: var(--p-surface-100, #f3f4f6);
 }
 
 /* readonly 模式：輸入框反灰 */

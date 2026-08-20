@@ -66,6 +66,16 @@ export interface TestStep {
   images: string[]
 }
 
+export interface CommitEntry {
+  sha: string
+  sha_short: string
+  message: string
+  author: string
+  date: string
+  url: string
+  ado_id?: number
+}
+
 export interface Report {
   ado_id: number
   ado_ids: number[]
@@ -79,4 +89,5 @@ export interface Report {
   reviewer: string
   test_items: TestItem[]
   test_steps: TestStep[]
+  commits?: CommitEntry[]
 }

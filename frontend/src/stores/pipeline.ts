@@ -51,6 +51,15 @@ export const usePipelineStore = defineStore('pipeline', () => {
     applySession(await fetchSession())
   }
 
+  async function resetToStart() {
+    const session = await updateSession({ currentStep: 1, reachedStep: 0 })
+    applySession(session)
+    logs.value = []
+    showLog.value = false
+    stepProgress.value = null
+    setStatus('從下載資料開始，每次只處理目前勾選的項目。')
+  }
+
   function _parseLogProgress(line: string, script: string): void {
     // 全流程 main 依序執行 fetch → group → report → word，
     // 每次進入新步驟時 total 會被重設
@@ -217,6 +226,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     stepProgress,
     applySession,
     loadSession,
+    resetToStart,
     runScript,
     abortScript,
     prevStep,

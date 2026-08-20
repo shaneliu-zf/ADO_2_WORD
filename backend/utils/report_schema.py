@@ -88,8 +88,8 @@ def validate_report(payload: Any, source: Path | str = "報告 JSON") -> Report:
     return cast(Report, payload)
 
 
-def find_report(work_item_id: int) -> Report | None:
-    """找到包含此 ADO ID 的 Bob 報告（合併組可能存在最小 ID 的檔名）。"""
+def locate_report(work_item_id: int) -> tuple[Path, Report] | None:
+    """找到包含此 ADO ID 的報告檔（合併組可能存在最小 ID 的檔名）。"""
     if not JSON_DIR.exists():
         return None
     path = JSON_DIR / f"work_item_{work_item_id}.json"
@@ -115,8 +115,13 @@ def find_report(work_item_id: int) -> Report | None:
             if value is not None
         ]
         if work_item_id in ado_ids:
-            return payload
+            return candidate, payload
     return None
+
+
+def find_report(work_item_id: int) -> Report | None:
+    found = locate_report(work_item_id)
+    return None if found is None else found[1]
 
 
 def list_report_ids() -> list[int]:

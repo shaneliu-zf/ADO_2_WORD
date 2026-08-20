@@ -48,7 +48,7 @@
         class="btn-prev"
         outlined
         :disabled="currentStep <= 1 || isRunning"
-        @click="pipelineStore.prevStep()"
+        @click="onPrevStep()"
       />
       <Button
         v-if="!isRunning"
@@ -74,6 +74,14 @@
       <label for="show-log">顯示 log</label>
     </div>
 
+    <Dialog v-model:visible="unbindVisible" modal header="解綁關聯" :style="{ width: '28rem' }">
+      <p class="confirm-msg">退回上一步時，是否解綁已合併的關聯分組？解綁後項目會恢復各自獨立。</p>
+      <template #footer>
+        <Button label="不解綁" outlined @click="prevWithoutUnbind" />
+        <Button label="解綁" severity="danger" @click="prevWithUnbind" />
+      </template>
+    </Dialog>
+
     <Dialog v-model:visible="confirmVisible" modal :header="confirmTitle" :style="{ width: '28rem' }">
       <p class="confirm-msg">{{ confirmMessage }}</p>
       <template #footer>
@@ -92,6 +100,7 @@ import Dialog from 'primevue/dialog'
 import { useToast } from 'primevue/usetoast'
 import { STEP_DEFS, usePipelineStore } from '@/stores/pipeline'
 import { useItemsStore } from '@/stores/items'
+import { clearGroups } from '@/api/client'
 import { storeToRefs } from 'pinia'
 
 const pipelineStore = usePipelineStore()
@@ -102,16 +111,21 @@ const { currentStep, reachedStep, isRunning, runningStep, showLog, status, statu
 const pipelineBusy = computed(() => isRunning.value && (runningStep.value ?? -1) >= 0)
 
 const confirmVisible = ref(false)
+const unbindVisible = ref(false)
 const confirmKind = ref<'fetch' | 'report'>('fetch')
 const pending = ref<{ script: string; index: number; ids: number[] } | null>(null)
+
+const hasRelatedGroups = computed(() =>
+  itemsStore.groups.some(group => group.ids.length >= 2),
+)
 
 const confirmTitle = computed(() => (confirmKind.value === 'fetch' ? '下載資料' : '產生報告'))
 const confirmMessage = computed(() =>
   confirmKind.value === 'fetch'
     ? '是否重新下載已經下載完成的項目'
-    : '是否重新整理已整理的項目',
+    : '是否重新產生已產生的項目',
 )
-const confirmRedoLabel = computed(() => (confirmKind.value === 'fetch' ? '重新下載' : '重新整理'))
+const confirmRedoLabel = computed(() => (confirmKind.value === 'fetch' ? '重新下載' : '重新產生'))
 const confirmSkipLabel = '略過'
 
 const executeLabel = computed(() => {
@@ -225,6 +239,27 @@ async function confirmSkip() {
     return
   }
   startRun(job.script, remaining, job.index, job.ids)
+}
+
+async function onPrevStep() {
+  if (currentStep.value === 2 && hasRelatedGroups.value) {
+    unbindVisible.value = true
+    return
+  }
+  await pipelineStore.prevStep()
+}
+
+async function prevWithoutUnbind() {
+  unbindVisible.value = false
+  await pipelineStore.prevStep()
+}
+
+async function prevWithUnbind() {
+  unbindVisible.value = false
+  const ids = resolveIds()
+  await clearGroups(ids.length ? ids : undefined)
+  await itemsStore.refresh()
+  await pipelineStore.prevStep()
 }
 
 function runAll() {

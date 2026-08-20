@@ -12,7 +12,6 @@
     :sortOrder="sortOrder"
     :rowHover="true"
     class="ado-table"
-    :rowClass="rowClass"
     @sort="onSort"
   >
     <!-- Checkbox 欄：field="groupKey" 讓 DataTable rowspan 自動合併關聯組 -->
@@ -50,8 +49,8 @@
           v-model="itemsStore.filters.types"
           :options="itemsStore.distinctTypes"
           placeholder="全部"
-          :maxSelectedLabels="allSelected(itemsStore.filters.types, itemsStore.distinctTypes) ? 0 : 1"
-          selectedItemsLabel="全部"
+          :maxSelectedLabels="filterMaxLabels(itemsStore.filters.types, itemsStore.distinctTypes)"
+          :selectedItemsLabel="filterOverflowLabel(itemsStore.filters.types, itemsStore.distinctTypes)"
           scrollHeight="2000px"
           class="w-full filter-control"
         />
@@ -66,8 +65,8 @@
           v-model="itemsStore.filters.states"
           :options="itemsStore.distinctStates"
           placeholder="全部"
-          :maxSelectedLabels="allSelected(itemsStore.filters.states, itemsStore.distinctStates) ? 0 : 1"
-          selectedItemsLabel="全部"
+          :maxSelectedLabels="filterMaxLabels(itemsStore.filters.states, itemsStore.distinctStates)"
+          :selectedItemsLabel="filterOverflowLabel(itemsStore.filters.states, itemsStore.distinctStates)"
           scrollHeight="2000px"
           class="w-full filter-control"
         />
@@ -105,8 +104,8 @@
           optionLabel="label"
           optionValue="value"
           placeholder="全部"
-          :maxSelectedLabels="allSelected(itemsStore.filters.fetched, statusValues) ? 0 : 1"
-          selectedItemsLabel="全部"
+          :maxSelectedLabels="filterMaxLabels(itemsStore.filters.fetched, statusValues)"
+          :selectedItemsLabel="filterOverflowLabel(itemsStore.filters.fetched, statusValues)"
           scrollHeight="2000px"
           class="w-full filter-control"
         />
@@ -134,8 +133,8 @@
           optionLabel="label"
           optionValue="value"
           placeholder="全部"
-          :maxSelectedLabels="allSelected(itemsStore.filters.relations, relationValues) ? 0 : 1"
-          selectedItemsLabel="全部"
+          :maxSelectedLabels="filterMaxLabels(itemsStore.filters.relations, relationValues)"
+          :selectedItemsLabel="filterOverflowLabel(itemsStore.filters.relations, relationValues)"
           scrollHeight="2000px"
           class="w-full filter-control"
         />
@@ -167,8 +166,8 @@
           optionLabel="label"
           optionValue="value"
           placeholder="全部"
-          :maxSelectedLabels="allSelected(itemsStore.filters.hasReport, statusValues) ? 0 : 1"
-          selectedItemsLabel="全部"
+          :maxSelectedLabels="filterMaxLabels(itemsStore.filters.hasReport, statusValues)"
+          :selectedItemsLabel="filterOverflowLabel(itemsStore.filters.hasReport, statusValues)"
           scrollHeight="2000px"
           class="w-full filter-control"
         />
@@ -272,8 +271,12 @@ function allSelected(selected: string[], options: string[]) {
   return options.length > 0 && selected.length === options.length && options.every(opt => selected.includes(opt))
 }
 
-function rowClass(data: AdoTableRow) {
-  return data.relationKind === 'related' ? 'grouped-row' : ''
+function filterMaxLabels(selected: string[], options: string[]) {
+  return allSelected(selected, options) ? 0 : 1
+}
+
+function filterOverflowLabel(selected: string[], options: string[]) {
+  return allSelected(selected, options) ? '全部' : '{0} 項'
 }
 
 function stateSeverity(state: string): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
@@ -340,12 +343,6 @@ function stateSeverity(state: string): 'success' | 'info' | 'warn' | 'danger' | 
 }
 .status-icon.done {
   color: var(--p-green-500, #22c55e);
-}
-:deep(.p-datatable-tbody > tr.grouped-row) {
-  background: color-mix(in srgb, var(--p-green-50, #f0fdf4) 70%, white);
-}
-:deep(.p-datatable-tbody > tr.grouped-row:hover) {
-  background: color-mix(in srgb, var(--p-green-100, #dcfce7) 80%, white);
 }
 
 .group-cell {

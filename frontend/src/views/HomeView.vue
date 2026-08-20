@@ -4,38 +4,34 @@
       <div class="table-area">
         <div class="left-toolbar">
           <Button
-            icon="pi pi-refresh"
+            label="載入 ID"
+            icon="pi pi-download"
             outlined
-            rounded
-            :loading="listing"
-            :disabled="pipelineStore.isRunning && !listing"
-            @click="reloadListed"
-            v-tooltip="'重載：從 Azure DevOps 列出 ID'"
+            :loading="importing || listing"
+            :disabled="pipelineStore.isRunning && !importing && !listing"
+            @click="openImportDialog"
           />
           <Button
+            label="刪除"
             icon="pi pi-trash"
             outlined
-            rounded
             severity="danger"
             :disabled="itemsStore.selectedIds.size === 0"
             :loading="deleting"
             @click="confirmDelete"
-            v-tooltip="itemsStore.selectedIds.size > 0 ? `刪除 ${itemsStore.selectedIds.size} 筆` : '請先勾選要刪除的項目'"
           />
           <Button
+            label="分析"
             icon="pi pi-chart-bar"
             outlined
-            rounded
+            class="settings-btn"
             @click="router.push('/dashboard')"
-            v-tooltip="'資料分析：類型、Redmine、狀態與列表'"
           />
           <Button
+            label="設定"
             icon="pi pi-cog"
             outlined
-            rounded
-            class="settings-btn"
             @click="configVisible = true"
-            v-tooltip="'設定：填寫 config.json'"
           />
         </div>
 
@@ -66,7 +62,42 @@
       :item="detailItem"
       :mode="detailMode"
     />
-    <ConfigDialog v-model:visible="configVisible" />
+    <ConfigDialog v-model:visible="configVisible" :required="configMissing" @saved="onConfigSaved" />
+    <Dialog
+      v-model:visible="importVisible"
+      header="載入 ID"
+      modal
+      :style="{ width: '36rem' }"
+      @show="fillImportFromCurrent"
+    >
+      <p class="import-lead">會透過輸入的 ID 去 ADO 撈取 Type、State、Title。</p>
+      <p class="import-hint">可貼上 ID，例如 841, 842, 845；或按「填入全部 ID」取得全部 ID。</p>
+      <Textarea
+        v-model="importText"
+        class="import-box"
+        rows="6"
+        autoResize
+      />
+      <p v-if="importError" class="error-msg">{{ importError }}</p>
+      <template #footer>
+        <Button label="取消" outlined severity="secondary" @click="importVisible = false" />
+        <Button
+          label="填入全部 ID"
+          icon="pi pi-list"
+          outlined
+          :loading="listing"
+          :disabled="pipelineStore.isRunning && !listing"
+          @click="fillIdsFromAdo"
+        />
+        <Button
+          label="載入"
+          icon="pi pi-download"
+          :loading="importing"
+          :disabled="pipelineStore.isRunning && !importing"
+          @click="importIds"
+        />
+      </template>
+    </Dialog>
   </div>
 </template>
 
@@ -74,7 +105,9 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import ProgressSpinner from 'primevue/progressspinner'
+import Textarea from 'primevue/textarea'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import AdoTable from '@/components/AdoTable.vue'
@@ -84,6 +117,7 @@ import AdoDetailDialog from '@/components/AdoDetailDialog.vue'
 import ConfigDialog from '@/components/ConfigDialog.vue'
 import { useItemsStore } from '@/stores/items'
 import { usePipelineStore } from '@/stores/pipeline'
+import { fetchAdoIds, fetchConfigStatus, loadItemSummaries } from '@/api/client'
 import type { AdoItem } from '@/types'
 
 const itemsStore = useItemsStore()
@@ -99,22 +133,79 @@ const detailVisible = ref(false)
 const detailItem = ref<AdoItem | null>(null)
 const detailMode = ref<'ado' | 'report'>('ado')
 const configVisible = ref(false)
+const configMissing = ref(false)
+const importVisible = ref(false)
+const importText = ref('')
+const importError = ref('')
+const importing = ref(false)
 
-async function reloadListed() {
+function currentIdText(): string {
+  return itemsStore.items.map(item => item.id).join(', ')
+}
+
+function fillImportFromCurrent() {
+  importError.value = ''
+  importText.value = currentIdText()
+}
+
+function openImportDialog() {
+  importVisible.value = true
+}
+
+function parseImportIds(text: string): number[] {
+  const ids: number[] = []
+  const seen = new Set<number>()
+  for (const match of text.matchAll(/\d+/g)) {
+    const id = Number(match[0])
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    ids.push(id)
+  }
+  return ids
+}
+
+async function importIds() {
+  importError.value = ''
+  const ids = parseImportIds(importText.value)
+  if (!ids.length) {
+    importError.value = '請貼上至少一個 ID'
+    return
+  }
+  if (pipelineStore.isRunning) return
+  importing.value = true
+  try {
+    const result = await loadItemSummaries(ids)
+    await pipelineStore.resetToStart()
+    await itemsStore.refresh()
+    toast.add({
+      severity: 'success',
+      summary: '已載入 ID',
+      detail: `共 ${result.count} 筆`,
+      life: 4000,
+    })
+    importVisible.value = false
+  } catch (err) {
+    importError.value = `載入失敗：${String(err)}`
+  } finally {
+    importing.value = false
+  }
+}
+
+async function fillIdsFromAdo() {
   if (pipelineStore.isRunning) return
   listing.value = true
+  importError.value = ''
   try {
-    const ok = await pipelineStore.runScript('list_ids', [], -1)
-    if (ok) {
-      toast.add({
-        severity: 'success',
-        summary: '已列出 ID',
-        detail: `共 ${itemsStore.items.length} 筆`,
-        life: 3000,
-      })
-    }
+    const ids = await fetchAdoIds()
+    importText.value = ids.join(', ')
+    toast.add({
+      severity: 'success',
+      summary: '已填入 ID',
+      detail: `共 ${ids.length} 筆，請再按載入`,
+      life: 3000,
+    })
   } catch (err) {
-    toast.add({ severity: 'error', summary: '列出 ID 失敗', detail: String(err), life: 4000 })
+    importError.value = `列出 ID 失敗：${String(err)}`
   } finally {
     listing.value = false
   }
@@ -124,14 +215,33 @@ async function refresh() {
   loading.value = true
   loadError.value = ''
   try {
-    await pipelineStore.loadSession()
+    await pipelineStore.resetToStart()
     await itemsStore.refresh()
   } catch (err) {
     loadError.value = `載入失敗：${String(err)}`
   } finally {
     loading.value = false
   }
-  if (!loadError.value) promptIfEmpty()
+  if (!loadError.value) await checkSetup()
+}
+
+async function checkSetup() {
+  try {
+    const status = await fetchConfigStatus()
+    if (!status.exists) {
+      configMissing.value = true
+      configVisible.value = true
+      return
+    }
+  } catch {
+    // 設定狀態讀不到時仍繼續後面的空清單提示
+  }
+  promptIfEmpty()
+}
+
+function onConfigSaved() {
+  configMissing.value = false
+  promptIfEmpty()
 }
 
 function promptIfEmpty() {
@@ -143,7 +253,7 @@ function promptIfEmpty() {
     rejectProps: { label: '不用', severity: 'secondary', outlined: true },
     acceptProps: { label: '取得' },
     accept: () => {
-      void reloadListed()
+      importVisible.value = true
     },
   })
 }
@@ -203,17 +313,22 @@ onMounted(refresh)
   flex-shrink: 0;
 }
 
-.left-toolbar :deep(.p-button) {
-  width: 2.75rem;
-  height: 2.75rem;
-}
-
-.left-toolbar :deep(.p-button .p-button-icon) {
-  font-size: 1.15rem;
-}
-
 .settings-btn {
   margin-left: auto;
+}
+
+.import-lead {
+  margin: 0 0 0.35rem;
+  line-height: 1.5;
+}
+
+.import-hint {
+  margin: 0 0 0.5rem;
+  color: var(--p-text-muted-color, #6b7280);
+}
+
+.import-box {
+  width: 100%;
 }
 
 .content-row {

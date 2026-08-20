@@ -152,32 +152,66 @@
     />
 
     <!-- ── Commits ─────────────────────────────────────────────────────────── -->
-    <template v-if="(local.commits || []).length">
-      <div class="section-title">Commit</div>
-      <table class="commit-table">
-        <thead>
-          <tr>
-            <th v-if="showCommitAdo">ADO</th>
-            <th>SHA</th>
-            <th>訊息</th>
-            <th>作者</th>
-            <th>日期</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(entry, idx) in local.commits" :key="entry.sha || idx">
-            <td v-if="showCommitAdo">{{ entry.ado_id ? `#${entry.ado_id}` : '' }}</td>
-            <td>
-              <a v-if="isHttpUrl(entry.url)" :href="entry.url" target="_blank" rel="noreferrer">{{ entry.sha_short || entry.sha.slice(0, 8) }}</a>
-              <span v-else>{{ entry.sha_short || (entry.sha || '').slice(0, 8) }}</span>
-            </td>
-            <td>{{ entry.message }}</td>
-            <td>{{ entry.author }}</td>
-            <td>{{ formatCommitDate(entry.date) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </template>
+    <div class="section-header">
+      <span class="section-title">Commit</span>
+      <Button v-if="!readonly" icon="pi pi-plus" label="新增" size="small" outlined @click="addCommit" />
+    </div>
+    <div v-if="!(local.commits || []).length" class="empty-hint">尚無 Commit</div>
+    <div
+      v-for="(entry, idx) in local.commits"
+      :key="idx"
+      class="item-card"
+    >
+      <div class="step-header">
+        <span class="step-label">Commit {{ idx + 1 }}</span>
+        <Button
+          v-if="!readonly"
+          icon="pi pi-trash"
+          label="刪除"
+          text
+          rounded
+          severity="danger"
+          size="small"
+          @click="removeCommit(idx)"
+        />
+      </div>
+      <div class="item-grid">
+        <div v-if="showCommitAdo" class="field">
+          <label>ADO</label>
+          <InputText
+            :modelValue="entry.ado_id ? String(entry.ado_id) : ''"
+            class="w-full"
+            :readonly="readonly"
+            @update:modelValue="(v: string) => setCommitAdo(entry, v)"
+          />
+        </div>
+        <div class="field">
+          <label>SHA</label>
+          <InputText
+            :modelValue="entry.sha"
+            class="w-full"
+            :readonly="readonly"
+            @update:modelValue="(v: string) => setCommitSha(entry, v)"
+          />
+        </div>
+        <div class="field field-span">
+          <label>訊息</label>
+          <InputText v-model="entry.message" class="w-full" :readonly="readonly" />
+        </div>
+        <div class="field">
+          <label>作者</label>
+          <InputText v-model="entry.author" class="w-full" :readonly="readonly" />
+        </div>
+        <div class="field">
+          <label>日期</label>
+          <InputText v-model="entry.date" class="w-full" :readonly="readonly" />
+        </div>
+        <div class="field field-span">
+          <label>網址</label>
+          <InputText v-model="entry.url" class="w-full" :readonly="readonly" />
+        </div>
+      </div>
+    </div>
 
     <!-- ── Save ────────────────────────────────────────────────────────────── -->
     <div v-if="showSave && !readonly" class="save-row">
@@ -193,7 +227,7 @@ import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { uploadItemImage } from '@/api/client'
-import type { Report, TestItem } from '@/types'
+import type { CommitEntry, Report, TestItem } from '@/types'
 
 const props = defineProps<{
   report: Report
@@ -206,11 +240,18 @@ const emit = defineEmits<{
   save: [report: Report]
 }>()
 
-// Deep-clone the report so edits don't mutate the prop directly
-const local = ref<Report>(JSON.parse(JSON.stringify(props.report)))
+function cloneReport(report: Report): Report {
+  const next = JSON.parse(JSON.stringify(report)) as Report
+  if (!Array.isArray(next.commits)) next.commits = []
+  return next
+}
+
+const local = ref<Report>(cloneReport(props.report))
 
 const readonly = computed(() => props.readonly === true)
-const showCommitAdo = computed(() => (local.value.commits || []).some((entry) => Boolean(entry.ado_id)))
+const showCommitAdo = computed(
+  () => (local.value.ado_ids?.length ?? 0) > 1 || (local.value.commits || []).some(entry => Boolean(entry.ado_id)),
+)
 const showSave = computed(() => props.showSave !== false)
 const toast = useToast()
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -220,7 +261,7 @@ const uploadingStep = ref<number | null>(null)
 watch(
   () => [props.report, props.readonly] as const,
   () => {
-    local.value = JSON.parse(JSON.stringify(props.report))
+    local.value = cloneReport(props.report)
   },
 )
 
@@ -229,7 +270,7 @@ function getDraft(): Report {
 }
 
 function reset() {
-  local.value = JSON.parse(JSON.stringify(props.report))
+  local.value = cloneReport(props.report)
 }
 
 defineExpose({ getDraft, reset })
@@ -305,20 +346,44 @@ function removeStepImage(stepIndex: number, imageIndex: number) {
   local.value.test_steps[stepIndex]?.images?.splice(imageIndex, 1)
 }
 
+function addCommit() {
+  if (!local.value.commits) local.value.commits = []
+  const entry: CommitEntry = {
+    sha: '',
+    sha_short: '',
+    message: '',
+    author: '',
+    date: '',
+    url: '',
+  }
+  if ((local.value.ado_ids?.length ?? 0) > 1) {
+    entry.ado_id = local.value.ado_id
+  }
+  local.value.commits.push(entry)
+}
+
+function removeCommit(index: number) {
+  local.value.commits?.splice(index, 1)
+}
+
+function setCommitSha(entry: CommitEntry, value: string) {
+  entry.sha = value.trim()
+  entry.sha_short = entry.sha.slice(0, 8)
+}
+
+function setCommitAdo(entry: CommitEntry, value: string) {
+  const id = Number(value.replace(/\D/g, ''))
+  if (!id) {
+    delete entry.ado_id
+    return
+  }
+  entry.ado_id = id
+}
+
 function imageSrc(src: string): string {
   if (!src) return ''
   if (/^(https?:|data:|\/)/i.test(src)) return src
   return `/static/ado/${src.replace(/^\.\//, '')}`
-}
-
-function isHttpUrl(url: string | undefined): boolean {
-  return Boolean(url && /^https?:\/\//i.test(url))
-}
-
-function formatCommitDate(raw: string | undefined): string {
-  const match = String(raw || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!match) return raw || ''
-  return `${match[1]}/${Number(match[2])}/${Number(match[3])}`
 }
 </script>
 
@@ -445,24 +510,6 @@ function formatCommitDate(raw: string | undefined): string {
   display: flex;
   justify-content: flex-end;
   padding-top: 0.5rem;
-}
-
-.commit-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-}
-
-.commit-table th,
-.commit-table td {
-  border: 1px solid var(--p-surface-200);
-  padding: 0.4rem 0.55rem;
-  text-align: left;
-  vertical-align: top;
-}
-
-.commit-table th {
-  background: var(--p-surface-100, #f3f4f6);
 }
 
 /* readonly 模式：輸入框反灰 */

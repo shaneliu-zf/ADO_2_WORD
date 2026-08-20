@@ -9,43 +9,60 @@
     dismissableMask
     @hide="onClose"
   >
-    <!-- Loading -->
-    <div v-if="loading" class="state-msg">
-      <ProgressSpinner style="width:2rem;height:2rem" />
-      <span>載入中…</span>
-    </div>
-
-    <!-- Error -->
-    <div v-else-if="loadError" class="state-msg error">
-      <i class="pi pi-exclamation-triangle" />
-      {{ loadError }}
-    </div>
-
-    <div v-else-if="mode === 'ado'" class="tab-content ado-mode">
-      <HtmlPreview v-if="htmlContent" :html="htmlContent" class="html-preview" />
+    <div v-if="mode === 'ado'" class="tab-content ado-mode">
+      <div class="tab-toolbar">
+        <Button
+          label="從 ADO 更新"
+          icon="pi pi-refresh"
+          size="small"
+          outlined
+          :loading="refreshing"
+          :disabled="pipelineStore.isRunning || loading"
+          @click="refreshAdo"
+        />
+      </div>
+      <div v-if="loading" class="state-msg">
+        <ProgressSpinner style="width:2rem;height:2rem" />
+        <span>載入中…</span>
+      </div>
+      <div v-else-if="loadError" class="state-msg error">
+        <i class="pi pi-exclamation-triangle" />
+        {{ loadError }}
+      </div>
+      <HtmlPreview v-else-if="htmlContent" :html="htmlContent" class="html-preview" />
       <div v-else class="state-msg">無 HTML 資料</div>
     </div>
 
-    <div v-else class="tab-content">
-      <template v-if="report">
-        <div class="tab-toolbar">
-          <Button v-if="!editing" label="編輯" icon="pi pi-pencil" size="small" outlined @click="startEdit" />
-          <template v-else>
-            <Button label="儲存" icon="pi pi-save" size="small" :loading="saving" @click="handleSave(editorRef?.getDraft())" />
-            <Button label="取消" icon="pi pi-times" size="small" outlined severity="secondary" @click="cancelEdit" />
-          </template>
-        </div>
-        <ReportEditor
-          ref="editorRef"
-          :report="report"
-          :readonly="!editing"
-          :show-save="false"
-          :saving="saving"
-          @save="handleSave"
-        />
-      </template>
-      <div v-else class="state-msg">無 Bob 報告資料</div>
-    </div>
+    <template v-else>
+      <div v-if="loading" class="state-msg">
+        <ProgressSpinner style="width:2rem;height:2rem" />
+        <span>載入中…</span>
+      </div>
+      <div v-else-if="loadError" class="state-msg error">
+        <i class="pi pi-exclamation-triangle" />
+        {{ loadError }}
+      </div>
+      <div v-else class="tab-content">
+        <template v-if="report">
+          <div class="tab-toolbar">
+            <Button v-if="!editing" label="編輯" icon="pi pi-pencil" size="small" outlined @click="startEdit" />
+            <template v-else>
+              <Button label="儲存" icon="pi pi-save" size="small" :loading="saving" @click="handleSave(editorRef?.getDraft())" />
+              <Button label="取消" icon="pi pi-times" size="small" outlined severity="secondary" @click="cancelEdit" />
+            </template>
+          </div>
+          <ReportEditor
+            ref="editorRef"
+            :report="report"
+            :readonly="!editing"
+            :show-save="false"
+            :saving="saving"
+            @save="handleSave"
+          />
+        </template>
+        <div v-else class="state-msg">無 Bob 報告資料</div>
+      </div>
+    </template>
   </Dialog>
 </template>
 
@@ -57,7 +74,9 @@ import ProgressSpinner from 'primevue/progressspinner'
 import { useToast } from 'primevue/usetoast'
 import ReportEditor from '@/components/ReportEditor.vue'
 import HtmlPreview from '@/components/HtmlPreview.vue'
-import { fetchItemJson, fetchItemHtml, updateItem } from '@/api/client'
+import { fetchItemJson, fetchItemHtml, updateItem, refreshWorkItem } from '@/api/client'
+import { useItemsStore } from '@/stores/items'
+import { usePipelineStore } from '@/stores/pipeline'
 import type { AdoItem, Report } from '@/types'
 
 const props = defineProps<{
@@ -69,6 +88,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:visible': [v: boolean]
 }>()
+
+const pipelineStore = usePipelineStore()
+const itemsStore = useItemsStore()
 
 const visibleModel = computed({
   get: () => props.visible,
@@ -86,6 +108,7 @@ const loadError = ref('')
 const report = ref<Report | null>(null)
 const htmlContent = ref('')
 const saving = ref(false)
+const refreshing = ref(false)
 const editing = ref(false)
 const editorRef = ref<{ getDraft: () => Report; reset: () => void } | null>(null)
 
@@ -119,6 +142,29 @@ watch(
 
 function onClose() {
   editing.value = false
+}
+
+async function refreshAdo() {
+  if (!itemId.value || pipelineStore.isRunning || refreshing.value) return
+  refreshing.value = true
+  loadError.value = ''
+  try {
+    await refreshWorkItem(itemId.value)
+    htmlContent.value = await fetchItemHtml(itemId.value)
+    const selected = [...itemsStore.selectedIds]
+    await itemsStore.refresh()
+    itemsStore.setSelectedIds(selected.filter(id => itemsStore.items.some(item => item.id === id)))
+    toast.add({
+      severity: 'success',
+      summary: '已更新',
+      detail: `ADO ${itemId.value} 已重新下載`,
+      life: 3000,
+    })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: '更新失敗', detail: String(err), life: 4000 })
+  } finally {
+    refreshing.value = false
+  }
 }
 
 function startEdit() {
@@ -166,6 +212,7 @@ async function handleSave(updated?: Report) {
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .html-preview {

@@ -49,7 +49,7 @@
       </div>
 
       <p v-if="!fetchedN" class="need-fetch">
-        建立月份、指派人、創建者、SA、工程師、測試人員要讀本機 ADO JSON。
+        建立月份、指派人、創建者、SA、工程師、測試人員、Category 要讀本機 ADO JSON。
         目前清單 {{ items.length }} 筆都還沒下載，請回首頁勾選後執行「下載資料」。
       </p>
 
@@ -134,6 +134,35 @@
             <ul class="legend">
               <li v-for="s in stateSlices" :key="s.label">
                 <button type="button" @click="openList('state', s.label, s.label)">
+                  <i :style="{ background: s.color }" />{{ s.label }}<b>{{ s.value }}</b>
+                </button>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section v-if="fetchedN" class="panel">
+          <h2>Category</h2>
+          <div class="chart-row">
+            <svg viewBox="0 0 42 42" class="donut">
+              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="var(--p-surface-200)" stroke-width="6" />
+              <circle
+                v-for="ring in categoryRings"
+                :key="ring.label"
+                cx="21" cy="21" r="15.915"
+                fill="transparent"
+                :stroke="ring.color"
+                stroke-width="6"
+                :stroke-dasharray="ring.dash"
+                :stroke-dashoffset="ring.offset"
+                class="donut-slice"
+                @click="openList('category', ring.label, ring.label)"
+              />
+              <text x="21" y="22.5" text-anchor="middle" class="donut-total">{{ fetchedN }}</text>
+            </svg>
+            <ul class="legend">
+              <li v-for="s in categorySlices" :key="s.label">
+                <button type="button" @click="openList('category', s.label, s.label)">
                   <i :style="{ background: s.color }" />{{ s.label }}<b>{{ s.value }}</b>
                 </button>
               </li>
@@ -261,10 +290,13 @@
       </div>
       <DataTable :value="listRows" dataKey="id" scrollable scrollHeight="420px" stripedRows>
         <Column field="id" header="ID" sortable style="width:88px">
-          <template #body="{ data }">#{{ data.id }}</template>
+          <template #body="{ data }">{{ data.id }}</template>
         </Column>
         <Column field="workItemType" header="類型" sortable style="width:100px" />
         <Column field="state" header="狀態" sortable style="width:110px" />
+        <Column field="category" header="Category" sortable style="width:110px">
+          <template #body="{ data }">{{ categoryLabel(data.category) }}</template>
+        </Column>
         <Column field="redmineId" header="Redmine" sortable style="width:110px">
           <template #body="{ data }">{{ data.redmineId || '—' }}</template>
         </Column>
@@ -313,6 +345,13 @@ const STATE_COLORS: Record<string, string> = {
   Develop: 'var(--p-indigo-400)',
   Review: 'var(--p-purple-400)',
 }
+const CATEGORY_COLORS: Record<string, string> = {
+  Bug: 'var(--p-red-400)',
+  Data: 'var(--p-blue-500)',
+  Enhance: 'var(--p-green-500)',
+  CR: 'var(--p-purple-400)',
+  Performance: 'var(--p-orange-500)',
+}
 const PALETTE = [
   'var(--p-blue-500)',
   'var(--p-teal-500)',
@@ -350,6 +389,10 @@ function shortName(name: string): string {
   if (name === 'Justin TY Huang WYMTN Wiwynn') return 'Justin Huang'
   if (name.includes('@')) return name.split('@')[0]
   return name
+}
+
+function categoryLabel(name: string): string {
+  return (name || '').trim() || '無標記'
 }
 
 function personLabel(name: string): string {
@@ -416,6 +459,14 @@ const stateSlices = computed<Slice[]>(() =>
 const typeRings = computed(() => toRings(typeSlices.value))
 const redmineRings = computed(() => toRings(redmineSlices.value))
 const stateRings = computed(() => toRings(stateSlices.value))
+const categorySlices = computed<Slice[]>(() =>
+  countMap(fetchedItems.value.map(i => categoryLabel(i.category))).map((row, index) => ({
+    label: row.label,
+    value: row.value,
+    color: CATEGORY_COLORS[row.label] || PALETTE[index % PALETTE.length],
+  })),
+)
+const categoryRings = computed(() => toRings(categorySlices.value))
 const monthRows = computed(() =>
   countMap(fetchedItems.value.map(i => yearMonth(i.createdDate) || '無標記')).sort((a, b) =>
     a.label.localeCompare(b.label),
@@ -443,6 +494,7 @@ function rowsFor(kind: string, key: string): AdoItem[] {
       if (kind === 'sa') return personLabel(item.saBy) === key
       if (kind === 'engineer') return personLabel(item.engineerBy) === key
       if (kind === 'tester') return personLabel(item.testerBy) === key
+      if (kind === 'category') return item.fetched && categoryLabel(item.category) === key
       if (kind === 'module') return moduleOf(item.title) === key
       return false
     })
@@ -461,7 +513,7 @@ function openAdo(item: AdoItem) {
 }
 
 async function copyIds() {
-  const text = listRows.value.map(item => `#${item.id}`).join(', ')
+  const text = listRows.value.map(item => String(item.id)).join(', ')
   try {
     await navigator.clipboard.writeText(text)
     toast.add({ severity: 'success', summary: '已複製 ID', detail: `${listRows.value.length} 筆`, life: 2500 })

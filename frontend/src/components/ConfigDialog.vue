@@ -1,8 +1,10 @@
 <template>
   <Dialog
     v-model:visible="visibleModel"
-    header="設定"
+    :header="required ? '請先填寫設定' : '設定'"
     modal
+    :closable="!required"
+    :closeOnEscape="!required"
     :style="{ width: '40rem' }"
     @show="loadConfig"
   >
@@ -11,6 +13,7 @@
       <span>載入中…</span>
     </div>
     <div v-else class="form">
+      <p v-if="required" class="hint">找不到 secrets/config.json，請填寫後儲存。</p>
       <div class="field">
         <label for="cfg-org">ADO 組織</label>
         <InputText id="cfg-org" v-model="form.organization" class="w-full" />
@@ -46,7 +49,7 @@
       <p v-if="error" class="error">{{ error }}</p>
     </div>
     <template #footer>
-      <Button label="取消" outlined severity="secondary" @click="visibleModel = false" />
+      <Button v-if="!required" label="取消" outlined severity="secondary" @click="visibleModel = false" />
       <Button label="儲存" icon="pi pi-save" :loading="saving" :disabled="loading" @click="handleSave" />
     </template>
   </Dialog>
@@ -65,6 +68,12 @@ import { fetchConfig, updateConfig } from '@/api/client'
 import type { AppConfig } from '@/types'
 
 const visible = defineModel<boolean>('visible', { default: false })
+defineProps<{
+  required?: boolean
+}>()
+const emit = defineEmits<{
+  saved: []
+}>()
 const toast = useToast()
 const loading = ref(false)
 const saving = ref(false)
@@ -118,6 +127,7 @@ async function handleSave() {
     applyForm(await updateConfig({ ...form }))
     toast.add({ severity: 'success', summary: '已儲存設定', life: 3000 })
     visibleModel.value = false
+    emit('saved')
   } catch (err) {
     error.value = apiError(err)
   } finally {
@@ -131,6 +141,13 @@ async function handleSave() {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--p-text-secondary-color);
 }
 
 .field {

@@ -18,6 +18,10 @@ export function fetchConfig(): Promise<AppConfig> {
   return http.get<AppConfig>('/api/config').then(r => r.data)
 }
 
+export function fetchConfigStatus(): Promise<{ exists: boolean }> {
+  return http.get<{ exists: boolean }>('/api/config/status').then(r => r.data)
+}
+
 export function updateConfig(body: AppConfig): Promise<AppConfig> {
   return http.put<AppConfig>('/api/config', body).then(r => r.data)
 }
@@ -36,6 +40,14 @@ export function updateSession(body: {
   return http.put<PipelineSession>('/api/session', body).then(r => r.data)
 }
 
+export function fetchAdoIds(): Promise<number[]> {
+  return http.get<{ ids: number[] }>('/api/ado/ids').then(r => r.data.ids)
+}
+
+export function loadItemSummaries(ids: number[]): Promise<{ ok: boolean; count: number }> {
+  return http.post<{ ok: boolean; count: number }>('/api/items/summaries', { ids }).then(r => r.data)
+}
+
 export function fetchItems(): Promise<AdoItem[]> {
   return http.get<AdoItem[]>('/api/items').then(r => r.data)
 }
@@ -48,6 +60,10 @@ export function fetchItemHtml(id: number): Promise<string> {
   return http.get<string>(`/api/items/${id}/html`, { responseType: 'text' }).then(r => r.data)
 }
 
+export function refreshWorkItem(id: number): Promise<{ ok: boolean }> {
+  return http.post<{ ok: boolean }>(`/api/items/${id}/refresh`).then(r => r.data)
+}
+
 export function updateItem(id: number, report: Report): Promise<{ ok: boolean }> {
   return http.put<{ ok: boolean }>(`/api/items/${id}`, report).then(r => r.data).catch(unwrapApiError)
 }
@@ -58,14 +74,16 @@ export function uploadItemImage(id: number, file: File): Promise<{ src: string }
   return http.post<{ src: string }>(`/api/items/${id}/images`, body).then(r => r.data)
 }
 
-export function deleteItems(ids: number[]): Promise<{ deleted: number[] }> {
-  return http
-    .delete<{ deleted: number[] }>('/api/items', { data: { ids } })
-    .then(r => r.data)
+export function deleteItems(ids: number[]): Promise<{ deleted: number[]; ok: boolean }> {
+  return http.post<{ deleted: number[]; ok: boolean }>('/api/items/delete', { ids }).then(r => r.data)
 }
 
 export function fetchGroups(): Promise<Group[]> {
   return http.get<Group[]>('/api/groups').then(r => r.data)
+}
+
+export function clearGroups(ids?: number[]): Promise<{ ok: boolean }> {
+  return http.delete<{ ok: boolean }>('/api/groups', { data: { ids: ids ?? [] } }).then(r => r.data)
 }
 
 // ── Pipeline ───────────────────────────────────────────────────────────────────

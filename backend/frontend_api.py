@@ -18,9 +18,9 @@ from flask import Blueprint, Response, jsonify, request, send_from_directory, st
 from backend.pipeline import STEPS, run_from, run_step
 from backend.pipeline.report_by_llm import resolve_site
 from backend.utils.config_io import read_config_file, save_config
-from backend.utils.paths import ADO_DIR, DOCX_DIR, JSON_DIR, STYLE_PATH
+from backend.utils.paths import ADO_DIR, CONFIG_PATH, DOCX_DIR, JSON_DIR, STYLE_PATH
 from backend.utils.pipeline_io import add_log_sink, remove_log_sink
-from backend.utils.report_schema import find_report, validate_report
+from backend.utils.report_schema import find_report, locate_report, validate_report
 from backend.utils.work_item_parser import (
     extract_commits,
     extract_redmine,
@@ -244,19 +244,42 @@ def _iso_mtime(path) -> str:
 def _parse_id_list(raw: Any) -> list[int]:
     if raw is None:
         return []
-    values = raw if isinstance(raw, list) else str(raw).replace(";", ",").split(",")
+    if isinstance(raw, list):
+        chunks = [str(value) for value in raw]
+    else:
+        chunks = re.split(r"[,;\s]+", str(raw))
     ids: list[int] = []
-    for value in values:
-        text = str(value).strip()
+    for chunk in chunks:
+        text = chunk.strip().lstrip("#")
         if not text:
             continue
-        try:
-            work_item_id = int(text)
-        except (TypeError, ValueError):
+        match = re.search(r"(\d+)", text)
+        if not match:
             continue
+        work_item_id = int(match.group(1))
         if work_item_id not in ids:
             ids.append(work_item_id)
     return ids
+
+
+def _set_listed_from_ids(ids: list[int]) -> None:
+    existing = {int(row["id"]): row for row in _load_listed() if row.get("id") is not None}
+    rows: list[dict[str, Any]] = []
+    for work_item_id in ids:
+        row = existing.get(work_item_id)
+        if row:
+            rows.append(row)
+            continue
+        built = _build_item(work_item_id, None, set())
+        rows.append(
+            {
+                "id": work_item_id,
+                "title": built.get("title") or "",
+                "work_item_type": built.get("workItemType") or "",
+                "state": built.get("state") or "",
+            }
+        )
+    _save_listed(rows)
 
 
 def _requested_ids() -> list[int] | None:
@@ -479,11 +502,73 @@ def _ado_ids_from_report(payload: dict[str, Any]) -> list[int]:
 
 
 def _report_path_for(work_item_id: int):
-    report = find_report(work_item_id)
-    if report is None:
+    found = locate_report(work_item_id)
+    if found is None:
         return None, None
-    primary = int(report.get("ado_id") or work_item_id)
-    return JSON_DIR / f"work_item_{primary}.json", report
+    return found
+
+
+def _commits_keeping_ids(commits: Any, keep: list[int]) -> list[dict[str, Any]]:
+    keep_set = set(keep)
+    rows: list[dict[str, Any]] = []
+    for entry in commits or []:
+        if not isinstance(entry, dict):
+            continue
+        ado = entry.get("ado_id")
+        if ado is not None and int(ado) not in keep_set:
+            continue
+        row = dict(entry)
+        if len(keep) == 1:
+            row.pop("ado_id", None)
+        rows.append(row)
+    return rows
+
+
+def _rebuild_report_commits(keep: list[int], fallback: Any) -> list[dict[str, Any]]:
+    from backend.pipeline.report_by_llm import collect_commits
+
+    items: list[dict[str, Any]] = []
+    for work_item_id in keep:
+        try:
+            items.append(read_work_item(work_item_id))
+        except FileNotFoundError:
+            continue
+    if items:
+        return list(collect_commits(items))
+    return _commits_keeping_ids(fallback, keep)
+
+
+def _prune_reports_for_ids(drop: set[int]) -> None:
+    if not drop or not JSON_DIR.exists():
+        return
+    name_re = re.compile(r"^work_item_(\d+)(?:_test)?\.json$")
+    for path in list(JSON_DIR.glob("work_item_*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        ado_ids = _ado_ids_from_report(payload)
+        match = name_re.fullmatch(path.name)
+        named_id = int(match.group(1)) if match else None
+        if not ado_ids:
+            if named_id in drop:
+                path.unlink(missing_ok=True)
+            continue
+        if not drop.intersection(ado_ids):
+            continue
+        keep = [work_item_id for work_item_id in ado_ids if work_item_id not in drop]
+        if not keep:
+            path.unlink(missing_ok=True)
+            continue
+        payload["ado_ids"] = keep
+        payload["ado_id"] = min(keep)
+        payload["commits"] = _rebuild_report_commits(keep, payload.get("commits"))
+        dest = JSON_DIR / f"work_item_{int(payload['ado_id'])}.json"
+        dest.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        if dest.resolve() != path.resolve():
+            path.unlink(missing_ok=True)
 
 
 def _cell(value: Any, images: dict[str, str] | None = None, as_html: bool = False) -> str:
@@ -644,6 +729,11 @@ def get_config():
         return _json_error(exc)
 
 
+@bp.get("/api/config/status")
+def get_config_status():
+    return jsonify({"exists": CONFIG_PATH.exists()})
+
+
 @bp.put("/api/config")
 def put_config():
     body = request.get_json(silent=True)
@@ -660,6 +750,43 @@ def get_session():
     return jsonify(_session_payload(_load_ui_session()))
 
 
+@bp.get("/api/ado/ids")
+def list_ado_ids():
+    try:
+        from backend.pipeline.list_ids import query_work_item_ids
+        from backend.utils.ado_client import auth_header
+        from backend.utils.config_io import load_config
+
+        config = load_config()
+        ids = query_work_item_ids(config, auth_header(config["pat"]))
+        return jsonify({"ids": ids})
+    except Exception as exc:  # noqa: BLE001 — Azure DevOps 請求失敗
+        return _json_error(exc, 502)
+
+
+@bp.post("/api/items/summaries")
+def load_item_summaries():
+    body = request.get_json(silent=True) or {}
+    ids = _parse_id_list(body.get("ids"))
+    if not ids:
+        return _json_error(ValueError("請傳入至少一個 ID。"))
+    try:
+        from backend.pipeline.list_ids import load_work_item_summaries
+        from backend.utils.ado_client import auth_header
+        from backend.utils.config_io import load_config
+
+        config = load_config()
+        rows = load_work_item_summaries(config, auth_header(config["pat"]), ids)
+        _save_listed(rows)
+        data = _load_ui_session()
+        data["working_ids"] = ids
+        data["listed_ids"] = ids
+        _save_ui_session(data)
+        return jsonify({"ok": True, "count": len(rows)})
+    except Exception as exc:  # noqa: BLE001 — Azure DevOps 請求失敗
+        return _json_error(exc, 502)
+
+
 @bp.put("/api/session")
 def update_session():
     body = request.get_json(silent=True) or {}
@@ -670,6 +797,7 @@ def update_session():
         data["working_ids"] = _parse_id_list(body.get("ids"))
         if body.get("listed"):
             data["listed_ids"] = list(data["working_ids"])
+            _set_listed_from_ids(data["working_ids"])
     if "currentStep" in body:
         data["current_step"] = max(1, min(PIPELINE_STEP_COUNT, int(body.get("currentStep") or 1)))
     if "reachedStep" in body:
@@ -736,12 +864,62 @@ def list_groups():
     return jsonify(groups)
 
 
+@bp.delete("/api/groups")
+def clear_groups():
+    body = request.get_json(silent=True) or {}
+    ids = set(_parse_id_list(body.get("ids")))
+    if ids:
+        drop: set[int] = set()
+        for group in _load_group_id_lists():
+            if ids.intersection(group):
+                drop.update(group)
+        _remove_ids_from_groups(drop)
+    elif GROUPS_PATH.exists():
+        _save_groups([])
+    return jsonify({"ok": True})
+
+
 @bp.get("/api/items/<int:item_id>")
 def get_item(item_id: int):
     report = find_report(item_id)
     if report is None:
         return _json_error(FileNotFoundError("尚未有 Bob 報告，請先跑「Bob 報告」。"), 404)
     return jsonify(report)
+
+
+@bp.post("/api/items/<int:item_id>/refresh")
+def refresh_work_item(item_id: int):
+    if _pipeline_running:
+        return _json_error(RuntimeError("流程正在執行，請稍後再更新。"), 409)
+    try:
+        from backend.pipeline.fetch import fetch_one_work_item
+        from backend.utils.ado_client import auth_header
+        from backend.utils.config_io import load_config
+
+        config = load_config()
+        authorization = auth_header(config["pat"])
+        fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        outcome = fetch_one_work_item(item_id, config, authorization, fetched_at)
+        item = outcome["item"]
+        rows = _load_listed()
+        for row in rows:
+            if int(row.get("id") or 0) == item_id:
+                row["title"] = stringify(item.get("title"))
+                row["work_item_type"] = stringify(item.get("work_item_type"))
+                row["state"] = stringify(item.get("state"))
+                _save_listed(rows)
+                break
+        found = locate_report(item_id)
+        if found is not None:
+            path, report = found
+            keep = _ado_ids_from_report(report) or [item_id]
+            report["commits"] = _rebuild_report_commits(keep, report.get("commits"))
+            path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return jsonify({"ok": True})
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
+        return _json_error(exc)
+    except Exception as exc:  # noqa: BLE001 — Azure DevOps 請求失敗
+        return _json_error(exc, 502)
 
 
 @bp.get("/api/items/<int:item_id>/html")
@@ -842,35 +1020,31 @@ def upload_item_image(item_id: int):
     return jsonify({"src": f"{media_dir.name}/{name}"})
 
 
+@bp.post("/api/items/delete")
 @bp.delete("/api/items")
 def delete_items():
-    body = request.get_json(silent=True) or {}
-    ids = [int(value) for value in (body.get("ids") or [])]
+    body = request.get_json(silent=True, force=True) or {}
+    ids = _parse_id_list(body.get("ids"))
+    if not ids:
+        ids = _parse_id_list(request.args.get("ids"))
+    if not ids:
+        return _json_error(ValueError("請傳入要刪除的 ID"), 400)
     drop = set(ids)
-    deleted: list[int] = []
     for item_id in ids:
-        removed = False
         ado_file = ADO_DIR / f"work_item_{item_id}.json"
         if ado_file.exists():
             ado_file.unlink()
-            removed = True
         ado_files_dir = ADO_DIR / f"work_item_{item_id}_files"
         if ado_files_dir.exists():
             shutil.rmtree(ado_files_dir)
-            removed = True
-        report_path, _report = _report_path_for(item_id)
-        if report_path is not None and report_path.exists():
-            report_path.unlink()
-            removed = True
-        if removed:
-            deleted.append(item_id)
+    _prune_reports_for_ids(drop)
     _remove_listed_ids(drop)
     _remove_ids_from_groups(drop)
     data = _load_ui_session()
     data["working_ids"] = [work_item_id for work_item_id in data.get("working_ids") or [] if work_item_id not in drop]
     data["listed_ids"] = [work_item_id for work_item_id in data.get("listed_ids") or [] if work_item_id not in drop]
     _save_ui_session(data)
-    return jsonify({"deleted": deleted or ids})
+    return jsonify({"deleted": ids, "ok": True})
 
 
 @bp.post("/api/pipeline/run")

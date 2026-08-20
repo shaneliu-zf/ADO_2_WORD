@@ -3,22 +3,32 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 import html
 import json
 import queue
 import re
 import shutil
 import threading
+import uuid
 from typing import Any
 
 from flask import Blueprint, Response, jsonify, request, send_from_directory, stream_with_context
 
 from backend.pipeline import STEPS, run_from, run_step
 from backend.pipeline.report_by_llm import resolve_site
+from backend.utils.config_io import read_config_file, save_config
 from backend.utils.paths import ADO_DIR, DOCX_DIR, JSON_DIR, STYLE_PATH
 from backend.utils.pipeline_io import add_log_sink, remove_log_sink
 from backend.utils.report_schema import find_report, validate_report
-from backend.utils.work_item_parser import apply_image_map, extract_redmine, read_work_item, stringify
+from backend.utils.work_item_parser import (
+    extract_redmine,
+    looks_like_html,
+    looks_like_markdown,
+    read_work_item,
+    rewrite_preview_media,
+    stringify,
+)
 
 bp = Blueprint("frontend_api", __name__)
 
@@ -72,7 +82,6 @@ HTML_KEYS = {
     "Microsoft.VSTS.TCM.ReproSteps",
     "Microsoft.VSTS.TCM.Steps",
 }
-IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE | re.DOTALL)
 ADO_JSON_RE = re.compile(r"^work_item_(\d+)\.json$")
 _pipeline_lock = threading.Lock()
 _session_file_lock = threading.Lock()
@@ -139,6 +148,48 @@ def _save_groups(groups: list[list[int]]) -> None:
     ADO_DIR.mkdir(parents=True, exist_ok=True)
     payload = [_group_payload(group) for group in groups if group]
     GROUPS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _load_group_id_lists() -> list[list[int]]:
+    if not GROUPS_PATH.exists():
+        return []
+    try:
+        saved = json.loads(GROUPS_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(saved, list):
+        return []
+    groups: list[list[int]] = []
+    for row in saved:
+        values = row.get("ids") if isinstance(row, dict) else row
+        if not isinstance(values, list):
+            continue
+        ids: list[int] = []
+        for value in values:
+            try:
+                work_item_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if work_item_id not in ids:
+                ids.append(work_item_id)
+        if ids:
+            groups.append(ids)
+    return groups
+
+
+def _remove_ids_from_groups(drop: set[int]) -> None:
+    if not drop or not GROUPS_PATH.exists():
+        return
+    next_groups = [[work_item_id for work_item_id in ids if work_item_id not in drop] for ids in _load_group_id_lists()]
+    next_groups = [ids for ids in next_groups if ids]
+    _save_groups(next_groups)
+
+
+def _sync_groups_to_listed() -> None:
+    keep = {int(row["id"]) for row in _load_listed() if row.get("id") is not None}
+    drop = {work_item_id for ids in _load_group_id_lists() for work_item_id in ids if work_item_id not in keep}
+    if drop:
+        _remove_ids_from_groups(drop)
 
 
 def _grouped_ids() -> set[int]:
@@ -409,26 +460,12 @@ def _report_path_for(work_item_id: int):
     return JSON_DIR / f"work_item_{primary}.json", report
 
 
-def _rewrite_media(text: str, images: dict[str, str] | None = None) -> str:
-    out = apply_image_map(text or "", images)
-
-    def repl(match: re.Match[str]) -> str:
-        prefix, quote, src = match.group(1), match.group(2), html.unescape(match.group(3)).strip()
-        if src.startswith(("http://", "https://", "data:", "/")):
-            new_src = src
-        else:
-            new_src = "/static/ado/" + src.lstrip("./")
-        return f"{prefix}{quote}{html.escape(new_src, quote=True)}{quote}"
-
-    return IMG_SRC_RE.sub(repl, out)
-
-
 def _cell(value: Any, images: dict[str, str] | None = None, as_html: bool = False) -> str:
     text = stringify(value)
     if not text:
         return '<span class="empty">（空）</span>'
-    if as_html:
-        return f'<div class="html-body">{_rewrite_media(text, images)}</div>'
+    if as_html or looks_like_html(text) or looks_like_markdown(text):
+        return f'<div class="html-body">{rewrite_preview_media(text, images)}</div>'
     return f'<div class="html-body">{html.escape(text).replace(chr(10), "<br>")}</div>'
 
 
@@ -437,7 +474,8 @@ def _field_rows(keys: list[str], fields: dict[str, Any], images: dict[str, str])
     for key in keys:
         if key not in fields:
             continue
-        as_html = key in HTML_KEYS or "<" in stringify(fields.get(key))
+        text = stringify(fields.get(key))
+        as_html = key in HTML_KEYS or looks_like_html(text) or looks_like_markdown(text)
         rows.append(
             f"<tr><th>{html.escape(key.split('.')[-1])}</th>"
             f"<td>{_cell(fields.get(key), images, as_html=as_html)}</td></tr>"
@@ -518,11 +556,41 @@ def _render_ado_html(item: dict[str, Any], work_item_id: int) -> str:
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="/style.css">
-  <style>body {{ margin: 16px; background: #fff; }}</style>
+  <style>
+    html, body {{
+      font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
+      margin: 16px;
+      background: #fff;
+      color: #222;
+    }}
+    .html-body pre {{ background:#f4f6f8; padding:12px; overflow:auto; }}
+    .html-body code {{ font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.92em; }}
+    .html-body blockquote {{ border-left: 3px solid #ddd; margin: 0.6em 0; padding-left: 12px; color: #555; }}
+    .html-body h1, .html-body h2, .html-body h3 {{ font-size: 1.15em; margin: 0.8em 0 0.4em; }}
+  </style>
 </head>
 <body>{body}</body>
 </html>
 """
+
+
+@bp.get("/api/config")
+def get_config():
+    try:
+        return jsonify(read_config_file())
+    except Exception as exc:
+        return _json_error(exc)
+
+
+@bp.put("/api/config")
+def put_config():
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return _json_error(ValueError("請傳入 JSON 物件"), 400)
+    try:
+        return jsonify(save_config(body))
+    except Exception as exc:
+        return _json_error(exc)
 
 
 @bp.get("/api/session")
@@ -555,6 +623,7 @@ def list_items():
         requested = _working_ids()
     if not requested:
         return jsonify([])
+    _sync_groups_to_listed()
     listed = {int(row["id"]): row for row in _load_listed() if row.get("id") is not None}
     grouped_ids = _grouped_ids()
     return jsonify(
@@ -571,6 +640,7 @@ def list_groups():
     if not requested:
         return jsonify([])
 
+    _sync_groups_to_listed()
     seen: set[int] = set()
     groups: list[dict[str, Any]] = []
 
@@ -591,19 +661,6 @@ def list_groups():
             for row in saved:
                 if isinstance(row, dict) and row.get("ids"):
                     add([int(value) for value in row["ids"]])
-
-    if JSON_DIR.exists():
-        for path in JSON_DIR.glob("work_item_*.json"):
-            try:
-                payload = validate_report(json.loads(path.read_text(encoding="utf-8")), path)
-            except (ValueError, OSError, json.JSONDecodeError):
-                continue
-            add(_ado_ids_from_report(payload))
-
-    leftovers = requested
-    for item_id in leftovers:
-        if item_id not in seen:
-            add([item_id])
 
     if requested is not None:
         keep = set(requested)
@@ -679,6 +736,32 @@ def update_item(item_id: int):
     return jsonify({"ok": True})
 
 
+UPLOAD_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+UPLOAD_IMAGE_MAX = 10 * 1024 * 1024
+
+
+@bp.post("/api/items/<int:item_id>/images")
+def upload_item_image(item_id: int):
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return _json_error(ValueError("請選擇圖片檔"), 400)
+    suffix = Path(uploaded.filename).suffix.lower()
+    if suffix not in UPLOAD_IMAGE_EXTS:
+        return _json_error(ValueError("只接受 png / jpg / gif / webp / bmp"), 400)
+    data = uploaded.read()
+    if not data:
+        return _json_error(ValueError("檔案是空的"), 400)
+    if len(data) > UPLOAD_IMAGE_MAX:
+        return _json_error(ValueError("圖片不能超過 10MB"), 400)
+    media_dir = ADO_DIR / f"work_item_{item_id}_files"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    stem = re.sub(r"[^\w.-]+", "_", Path(uploaded.filename).stem, flags=re.UNICODE)[:40] or "image"
+    name = f"upload_{uuid.uuid4().hex[:8]}_{stem}{suffix}"
+    dest = media_dir / name
+    dest.write_bytes(data)
+    return jsonify({"src": f"{media_dir.name}/{name}"})
+
+
 @bp.delete("/api/items")
 def delete_items():
     body = request.get_json(silent=True) or {}
@@ -702,6 +785,7 @@ def delete_items():
         if removed:
             deleted.append(item_id)
     _remove_listed_ids(drop)
+    _remove_ids_from_groups(drop)
     data = _load_ui_session()
     data["working_ids"] = [work_item_id for work_item_id in data.get("working_ids") or [] if work_item_id not in drop]
     data["listed_ids"] = [work_item_id for work_item_id in data.get("listed_ids") or [] if work_item_id not in drop]

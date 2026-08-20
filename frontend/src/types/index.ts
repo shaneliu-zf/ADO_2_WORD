@@ -19,6 +19,9 @@ export interface AdoTableRow extends AdoItem {
   groupSize: number
   groupIds: number[]
   redmineId: string
+  isGroupHead: boolean
+  groupHasReport: boolean
+  relationKind: 'related' | 'solo' | 'unknown'
 }
 
 export interface TestItem {
@@ -33,6 +36,14 @@ export interface Group {
   ids: number[]
   primary_id: number
   redmine_id: string
+}
+
+export interface AppConfig {
+  organization: string
+  project: string
+  pat: string
+  ado_base_url: string
+  bob_api_key: string
 }
 
 export interface PipelineSession {

@@ -81,6 +81,8 @@ def style():
 
 @app.route("/<path:filename>", methods=["GET"])
 def ado_file(filename: str):
+    if filename.startswith(("api/", "static/")):
+        return ("Not Found", 404)
     if not ADO_DIR.exists():
         return ("尚未抓取 ADO", 404)
     return send_from_directory(ADO_DIR, filename)

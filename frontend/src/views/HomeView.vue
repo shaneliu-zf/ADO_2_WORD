@@ -7,7 +7,6 @@
             icon="pi pi-refresh"
             outlined
             rounded
-            size="small"
             :loading="listing"
             :disabled="pipelineStore.isRunning && !listing"
             @click="reloadListed"
@@ -17,12 +16,19 @@
             icon="pi pi-trash"
             outlined
             rounded
-            size="small"
             severity="danger"
             :disabled="itemsStore.selectedIds.size === 0"
             :loading="deleting"
             @click="confirmDelete"
             v-tooltip="itemsStore.selectedIds.size > 0 ? `刪除 ${itemsStore.selectedIds.size} 筆` : '請先勾選要刪除的項目'"
+          />
+          <Button
+            icon="pi pi-cog"
+            outlined
+            rounded
+            class="settings-btn"
+            @click="configVisible = true"
+            v-tooltip="'設定：填寫 config.json'"
           />
         </div>
 
@@ -51,7 +57,9 @@
     <AdoDetailDialog
       v-model:visible="detailVisible"
       :item="detailItem"
+      :mode="detailMode"
     />
+    <ConfigDialog v-model:visible="configVisible" />
   </div>
 </template>
 
@@ -65,6 +73,7 @@ import AdoTable from '@/components/AdoTable.vue'
 import PipelinePanel from '@/components/PipelinePanel.vue'
 import LogPanel from '@/components/LogPanel.vue'
 import AdoDetailDialog from '@/components/AdoDetailDialog.vue'
+import ConfigDialog from '@/components/ConfigDialog.vue'
 import { useItemsStore } from '@/stores/items'
 import { usePipelineStore } from '@/stores/pipeline'
 import type { AdoItem } from '@/types'
@@ -79,6 +88,8 @@ const loadError = ref('')
 const deleting = ref(false)
 const detailVisible = ref(false)
 const detailItem = ref<AdoItem | null>(null)
+const detailMode = ref<'ado' | 'report'>('ado')
+const configVisible = ref(false)
 
 async function reloadListed() {
   if (pipelineStore.isRunning) return
@@ -111,6 +122,21 @@ async function refresh() {
   } finally {
     loading.value = false
   }
+  if (!loadError.value) promptIfEmpty()
+}
+
+function promptIfEmpty() {
+  if (itemsStore.items.length > 0 || listing.value || pipelineStore.isRunning) return
+  confirm.require({
+    header: '目前沒有資料',
+    message: '發現目前沒有資料，是否需要從 ADO 取得 ID 跟 Title',
+    icon: 'pi pi-inbox',
+    rejectProps: { label: '不用', severity: 'secondary', outlined: true },
+    acceptProps: { label: '取得' },
+    accept: () => {
+      void reloadListed()
+    },
+  })
 }
 
 function confirmDelete() {
@@ -140,9 +166,10 @@ async function handleDelete(ids: number[]) {
   }
 }
 
-function openDetail(id: number) {
-  const found = itemsStore.filteredItems.find(i => i.id === id) ?? null
+function openDetail(payload: { id: number; mode: 'ado' | 'report' }) {
+  const found = itemsStore.filteredItems.find(i => i.id === payload.id) ?? null
   detailItem.value = found
+  detailMode.value = payload.mode
   detailVisible.value = true
 }
 
@@ -165,6 +192,19 @@ onMounted(refresh)
   align-items: center;
   gap: 0.6rem;
   flex-shrink: 0;
+}
+
+.left-toolbar :deep(.p-button) {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.left-toolbar :deep(.p-button .p-button-icon) {
+  font-size: 1.15rem;
+}
+
+.settings-btn {
+  margin-left: auto;
 }
 
 .content-row {

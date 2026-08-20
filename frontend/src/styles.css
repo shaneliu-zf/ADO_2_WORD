@@ -13,6 +13,20 @@ html {
   --p-font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
 }
 
+.p-component,
+.p-button,
+.p-inputtext,
+.p-datatable,
+.p-dialog,
+.p-dialog-header,
+.p-dialog-title,
+.p-dialog-content,
+.p-toast,
+.p-multiselect,
+.p-multiselect-overlay {
+  font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
+}
+
 body,
 .p-component,
 .p-button,

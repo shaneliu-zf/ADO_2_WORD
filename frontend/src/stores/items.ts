@@ -13,12 +13,27 @@ export const useItemsStore = defineStore('items', () => {
     types: [] as string[],
     states: [] as string[],
     fetched: [] as Array<'yes' | 'no'>,
-    grouped: [] as Array<'yes' | 'no'>,
+    relations: [] as Array<'related' | 'solo' | 'unknown'>,
     hasReport: [] as Array<'yes' | 'no'>,
   })
 
+  const relatedById = computed(() => {
+    const map = new Map<number, Group>()
+    for (const group of groups.value) {
+      if (group.ids.length < 2) continue
+      for (const id of group.ids) map.set(id, group)
+    }
+    return map
+  })
+
+  function relationKindOf(item: AdoItem): 'related' | 'solo' | 'unknown' {
+    if (relatedById.value.has(item.id)) return 'related'
+    if (item.grouped) return 'solo'
+    return 'unknown'
+  }
+
   const filteredItems = computed(() => {
-    const { idText, titleText, types, states, fetched, grouped, hasReport } = filters.value
+    const { idText, titleText, types, states, fetched, relations, hasReport } = filters.value
     const idQ = idText.trim()
     const titleQ = titleText.toLowerCase().trim()
     return items.value.filter(item => {
@@ -27,33 +42,50 @@ export const useItemsStore = defineStore('items', () => {
       if (!types.includes(item.workItemType)) return false
       if (!states.includes(item.state)) return false
       if (!matchFlag(fetched, item.fetched)) return false
-      if (!matchFlag(grouped, item.grouped)) return false
+      if (!relations.includes(relationKindOf(item))) return false
       if (!matchFlag(hasReport, item.hasReport)) return false
       return true
     })
   })
 
   const tableRows = computed<AdoTableRow[]>(() => {
-    const byId = new Map<number, Group>()
-    for (const group of groups.value) {
-      for (const id of group.ids) byId.set(id, group)
-    }
-    return filteredItems.value
+    const rows = filteredItems.value
       .map(item => {
-        const group = byId.get(item.id)
-        const groupIds = group?.ids?.length ? group.ids : [item.id]
+        const related = relatedById.value.get(item.id)
+        const groupIds = related?.ids?.length ? related.ids : [item.id]
+        const relationKind = relationKindOf(item)
         return {
           ...item,
-          groupKey: group?.primary_id ?? item.id,
+          groupKey: related?.primary_id ?? item.id,
           groupSize: groupIds.length,
           groupIds,
-          redmineId: group?.redmine_id ?? '',
+          redmineId: related?.redmine_id ?? '',
+          isGroupHead: false,
+          groupHasReport: false,
+          relationKind,
         }
       })
       .sort((a, b) => {
         if (a.groupKey !== b.groupKey) return a.groupKey - b.groupKey
         return a.id - b.id
       })
+    const counts = new Map<number, number>()
+    const reportByGroup = new Map<number, boolean>()
+    for (const row of rows) {
+      counts.set(row.groupKey, (counts.get(row.groupKey) ?? 0) + 1)
+      if (row.hasReport) reportByGroup.set(row.groupKey, true)
+    }
+    const seen = new Set<number>()
+    return rows.map(row => {
+      const isGroupHead = !seen.has(row.groupKey)
+      seen.add(row.groupKey)
+      return {
+        ...row,
+        groupSize: counts.get(row.groupKey) ?? 1,
+        isGroupHead,
+        groupHasReport: reportByGroup.get(row.groupKey) ?? false,
+      }
+    })
   })
 
   const distinctTypes = computed(() => [...new Set(items.value.map(i => i.workItemType).filter(Boolean))])
@@ -79,7 +111,7 @@ export const useItemsStore = defineStore('items', () => {
     filters.value.types = mergeSelected(filters.value.types, previousTypes, nextTypes)
     filters.value.states = mergeSelected(filters.value.states, previousStates, nextStates)
     if (!filters.value.fetched.length) filters.value.fetched = ['yes', 'no']
-    if (!filters.value.grouped.length) filters.value.grouped = ['yes', 'no']
+    if (!filters.value.relations.length) filters.value.relations = ['related', 'solo', 'unknown']
     if (!filters.value.hasReport.length) filters.value.hasReport = ['yes', 'no']
   }
 
@@ -121,7 +153,7 @@ export const useItemsStore = defineStore('items', () => {
     filters.value.types = [...distinctTypes.value]
     filters.value.states = [...distinctStates.value]
     filters.value.fetched = ['yes', 'no']
-    filters.value.grouped = ['yes', 'no']
+    filters.value.relations = ['related', 'solo', 'unknown']
     filters.value.hasReport = ['yes', 'no']
   }
 

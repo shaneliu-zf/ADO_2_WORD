@@ -45,23 +45,53 @@ def load_bob_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"bob_api_key": api_key}
 
 
+def _as_json_object(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("LLM 回傳的 JSON 必須是物件")
+    return payload
+
+
+def _error_snippet(text: str, exc: json.JSONDecodeError, radius: int = 180) -> str:
+    pos = max(0, min(exc.pos, len(text)))
+    start = max(0, pos - radius)
+    end = min(len(text), pos + radius)
+    return text[start:end]
+
+
+def _repair_llm_json(text: str) -> str:
+    try:
+        from json_repair import repair_json
+
+        repaired = repair_json(text, ensure_ascii=False)
+        return repaired if isinstance(repaired, str) else json.dumps(repaired, ensure_ascii=False)
+    except Exception:
+        text = re.sub(r",(\s*[}\]])", r"\1", text)
+        text = re.sub(r'(["\d\]e]|true|false|null)(\s*\n\s*)"', r'\1,\2"', text)
+        return text
+
+
 def parse_json_object(text: str) -> dict[str, Any]:
     """從 LLM 回覆中抽出 JSON 物件（可含 ```json fence）。"""
     raw = (text or "").strip()
     fenced = FENCE_RE.search(raw)
     if fenced:
         raw = fenced.group(1).strip()
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        start = raw.find("{")
-        end = raw.rfind("}")
-        if start < 0 or end <= start:
-            raise ValueError(f"LLM 沒有回傳 JSON：{raw[:400]}") from None
-        payload = json.loads(raw[start : end + 1])
-    if not isinstance(payload, dict):
-        raise ValueError("LLM 回傳的 JSON 必須是物件")
-    return payload
+    start = raw.find("{")
+    end = raw.rfind("}")
+    blob = raw[start : end + 1] if start >= 0 and end > start else raw
+    last_exc: json.JSONDecodeError | None = None
+    for candidate in (blob, _repair_llm_json(blob)):
+        try:
+            return _as_json_object(json.loads(candidate))
+        except json.JSONDecodeError as exc:
+            last_exc = exc
+    if start < 0 or end <= start:
+        raise ValueError(f"LLM 沒有回傳 JSON：{raw[:400]}")
+    assert last_exc is not None
+    snippet = _error_snippet(blob, last_exc)
+    raise ValueError(
+        f"LLM 回傳的 JSON 無法解析：第 {last_exc.lineno} 行第 {last_exc.colno} 欄\n{snippet}"
+    ) from None
 
 
 def format_http_error(status: int, body: str, url: str) -> str:
@@ -92,8 +122,8 @@ def chat_completion(
     config: dict[str, Any] | None = None,
     model: str | None = None,
     temperature: float = 0,
-    max_tokens: int = 4096,
-    timeout: int = 120,
+    max_tokens: int = 16384,
+    timeout: int = 180,
 ) -> str:
     """呼叫 Bob chat/completions，回傳 message content 字串。"""
     cfg = load_bob_config(config)
@@ -131,8 +161,8 @@ def chat_json(
     config: dict[str, Any] | None = None,
     model: str | None = None,
     temperature: float = 0,
-    max_tokens: int = 4096,
-    timeout: int = 120,
+    max_tokens: int = 16384,
+    timeout: int = 180,
 ) -> dict[str, Any]:
     """呼叫 Bob，並把回覆解析成 JSON 物件。"""
     content = chat_completion(

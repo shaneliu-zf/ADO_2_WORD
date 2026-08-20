@@ -17,6 +17,16 @@ TITLE_REDMINE_RE = re.compile(r"\(#?(\d{4,}(?:\.\d+)*)\)\s*$")
 # 留言常見 BUG #63474 / redmine 63474
 COMMENT_REDMINE_RE = re.compile(r"(?i)(?:redmine\s*#?\s*|BUG\s*#\s*)(\d{4,}(?:\.\d+)*)")
 RELATED_ID_RE = re.compile(r"(?i)/workItems/(\d+)")
+IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE | re.DOTALL)
+MD_IMG_RE = re.compile(
+    r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:[ \t]+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
+)
+ADO_COLON_IMG_RE = re.compile(r":::image\b(.*?):::", re.IGNORECASE | re.DOTALL)
+ADO_COLON_SRC_RE = re.compile(r'\bsource\s*=\s*"([^"]+)"', re.IGNORECASE)
+HTML_HINT_RE = re.compile(r"<[a-zA-Z][a-zA-Z0-9]*(?:\s|>|/)")
+MD_HINT_RE = re.compile(
+    r"(?m)(?:!\[[^\]]*\]\(|^#{1,6}\s|^\s{0,3}(?:[-*+]|\d+\.)\s|\*\*[^*\n]+\*\*|```|^\|.+\||:::image\b)",
+)
 
 
 def stringify(value: Any) -> str:
@@ -63,7 +73,7 @@ def apply_image_map(text: str, images: dict[str, str] | None) -> str:
     if not images:
         return text
     out = text
-    for url, local in images.items():
+    for url, local in sorted(images.items(), key=lambda item: len(item[0] or ""), reverse=True):
         if not url or not local:
             continue
         if url in out:
@@ -72,6 +82,112 @@ def apply_image_map(text: str, images: dict[str, str] | None) -> str:
         if escaped != url and escaped in out:
             out = out.replace(escaped, html.escape(local, quote=True))
     return out
+
+
+def looks_like_html(text: str) -> bool:
+    return bool(HTML_HINT_RE.search(text or ""))
+
+
+def looks_like_markdown(text: str) -> bool:
+    return bool(MD_HINT_RE.search(text or ""))
+
+
+def extract_image_urls(*chunks: str) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    def add(url: str) -> None:
+        url = html.unescape(url or "").strip().strip("<>")
+        if url.startswith("#") or url.lower().startswith("javascript:"):
+            return
+        if url and url not in seen:
+            seen.add(url)
+            urls.append(url)
+
+    for chunk in chunks:
+        if not chunk:
+            continue
+        for match in IMG_SRC_RE.finditer(chunk):
+            add(match.group(3))
+        for match in MD_IMG_RE.finditer(chunk):
+            add(match.group(2))
+        for match in ADO_COLON_IMG_RE.finditer(chunk):
+            src = ADO_COLON_SRC_RE.search(match.group(1) or "")
+            if src:
+                add(src.group(1))
+    return urls
+
+
+def collect_item_image_urls(item: dict[str, Any]) -> list[str]:
+    chunks: list[str] = []
+    for value in (item.get("fields") or {}).values():
+        if isinstance(value, str) and value:
+            chunks.append(value)
+    for comment in item.get("comments") or []:
+        if not isinstance(comment, dict):
+            continue
+        text = stringify(comment.get("text"))
+        if text:
+            chunks.append(text)
+    urls = extract_image_urls(*chunks)
+    seen = set(urls)
+    for rel in item.get("relations") or []:
+        if not isinstance(rel, dict):
+            continue
+        url = str(rel.get("url") or "").strip()
+        rel_type = str(rel.get("rel") or "")
+        if rel_type == "AttachedFile" or "/_apis/wit/attachments/" in url:
+            if url and url not in seen:
+                seen.add(url)
+                urls.append(url)
+    return urls
+
+
+def _md_images_to_html(text: str) -> str:
+    def repl_md(match: re.Match[str]) -> str:
+        alt = html.escape(match.group(1) or "", quote=True)
+        src = html.escape(html.unescape(match.group(2)).strip(), quote=True)
+        return f'<img src="{src}" alt="{alt}">'
+
+    def repl_colon(match: re.Match[str]) -> str:
+        src_match = ADO_COLON_SRC_RE.search(match.group(1) or "")
+        if not src_match:
+            return match.group(0)
+        src = html.escape(html.unescape(src_match.group(1)).strip(), quote=True)
+        return f'<img src="{src}" alt="">'
+
+    out = MD_IMG_RE.sub(repl_md, text or "")
+    return ADO_COLON_IMG_RE.sub(repl_colon, out)
+
+
+def render_rich_html(text: str) -> str:
+    """把 ADO 原文（HTML、Markdown 或兩者混合）轉成可預覽的 HTML。"""
+    fragment = _md_images_to_html(text or "")
+    if not looks_like_markdown(text or ""):
+        return fragment
+    import markdown
+
+    extensions = ["extra", "sane_lists"]
+    if not looks_like_html(text or ""):
+        extensions.append("nl2br")
+    return markdown.markdown(fragment, extensions=extensions)
+
+
+def prefix_static_media(html_text: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        prefix, quote, src = match.group(1), match.group(2), html.unescape(match.group(3)).strip()
+        if src.startswith(("http://", "https://", "data:", "/")):
+            new_src = src
+        else:
+            new_src = "/static/ado/" + src.lstrip("./")
+        return f"{prefix}{quote}{html.escape(new_src, quote=True)}{quote}"
+
+    return IMG_SRC_RE.sub(repl, html_text or "")
+
+
+def rewrite_preview_media(text: str, images: dict[str, str] | None = None) -> str:
+    mapped = apply_image_map(text or "", images)
+    return prefix_static_media(render_rich_html(mapped))
 
 
 def extract_redmine(item: dict[str, Any]) -> str:

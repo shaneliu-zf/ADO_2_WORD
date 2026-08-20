@@ -8,12 +8,12 @@
     filterDisplay="row"
     rowGroupMode="rowspan"
     groupRowsBy="groupKey"
+    sortMode="single"
     sortField="groupKey"
     :sortOrder="1"
     :rowHover="true"
     class="ado-table"
     :rowClass="rowClass"
-    @rowClick="onRowClick"
   >
     <Column selectionMode="multiple" headerStyle="width:3rem" :showFilterMenu="false" />
     <Column field="id" header="ID" sortable style="width:88px" :showFilterMenu="false">
@@ -65,16 +65,20 @@
       :showFilterMenu="false"
     >
       <template #body="{ data }">
-        <i
-          class="status-icon"
-          :class="data.fetched ? 'pi pi-check-circle done' : 'pi pi-minus-circle pending'"
-          v-tooltip="data.fetched ? '已下載資料' : '尚未下載資料'"
-        />
+        <button
+          v-if="data.fetched"
+          type="button"
+          class="view-data-link"
+          @click.stop="emit('open-detail', { id: data.id, mode: 'ado' })"
+        >
+          查看資料
+        </button>
+        <span v-else class="no-data">未下載</span>
       </template>
       <template #filter>
         <MultiSelect
           v-model="itemsStore.filters.fetched"
-          :options="statusOptions"
+          :options="fetchedOptions"
           optionLabel="label"
           optionValue="value"
           placeholder="全部"
@@ -94,25 +98,20 @@
       :showFilterMenu="false"
     >
       <template #body="{ data }">
-        <div v-if="data.groupSize > 1" class="group-cell">
+        <div v-if="data.relationKind === 'related'" class="group-cell">
           <span class="group-ids">{{ data.groupIds.map((id: number) => `#${id}`).join(' · ') }}</span>
           <span v-if="data.redmineId" class="group-redmine">Redmine #{{ data.redmineId }}</span>
         </div>
-        <i
-          v-else
-          class="status-icon"
-          :class="data.grouped ? 'pi pi-check-circle done' : 'pi pi-minus-circle pending'"
-          v-tooltip="data.grouped ? '已關聯分組（無其他相關項目）' : '尚未關聯分組'"
-        />
+        <span v-else class="no-data">{{ data.relationKind === 'solo' ? '無關聯item' : '未判斷關聯' }}</span>
       </template>
       <template #filter>
         <MultiSelect
-          v-model="itemsStore.filters.grouped"
-          :options="statusOptions"
+          v-model="itemsStore.filters.relations"
+          :options="relationOptions"
           optionLabel="label"
           optionValue="value"
           placeholder="全部"
-          :maxSelectedLabels="allSelected(itemsStore.filters.grouped, statusValues) ? 0 : 1"
+          :maxSelectedLabels="allSelected(itemsStore.filters.relations, relationValues) ? 0 : 1"
           selectedItemsLabel="全部"
           scrollHeight="2000px"
           class="w-full filter-control"
@@ -120,7 +119,7 @@
       </template>
     </Column>
     <Column
-      field="hasReport"
+      field="groupKey"
       header="產生報告"
       sortable
       headerStyle="width:8.5rem;white-space:nowrap"
@@ -128,16 +127,20 @@
       :showFilterMenu="false"
     >
       <template #body="{ data }">
-        <i
-          class="status-icon"
-          :class="data.hasReport ? 'pi pi-check-circle done' : 'pi pi-minus-circle pending'"
-          v-tooltip="data.hasReport ? '已產生報告' : '尚未產生報告'"
-        />
+        <button
+          v-if="data.groupHasReport"
+          type="button"
+          class="view-data-link"
+          @click.stop="emit('open-detail', { id: data.id, mode: 'report' })"
+        >
+          查看結果
+        </button>
+        <span v-else class="no-data">未產生</span>
       </template>
       <template #filter>
         <MultiSelect
           v-model="itemsStore.filters.hasReport"
-          :options="statusOptions"
+          :options="reportOptions"
           optionLabel="label"
           optionValue="value"
           placeholder="全部"
@@ -159,17 +162,27 @@ import Tag from 'primevue/tag'
 import InputText from 'primevue/inputtext'
 import MultiSelect from 'primevue/multiselect'
 import { useItemsStore } from '@/stores/items'
-import type { AdoItem, AdoTableRow } from '@/types'
+import type { AdoTableRow } from '@/types'
 
 const emit = defineEmits<{
-  'open-detail': [id: number]
+  'open-detail': [payload: { id: number; mode: 'ado' | 'report' }]
 }>()
 
 const itemsStore = useItemsStore()
-const statusOptions = [
-  { label: 'Done', value: 'yes' },
-  { label: 'Not yet', value: 'no' },
+const fetchedOptions = [
+  { label: '下載完成', value: 'yes' },
+  { label: '未下載', value: 'no' },
 ]
+const reportOptions = [
+  { label: '查看結果', value: 'yes' },
+  { label: '未產生', value: 'no' },
+]
+const relationOptions = [
+  { label: '有關聯item', value: 'related' },
+  { label: '無關聯item', value: 'solo' },
+  { label: '未判斷關聯', value: 'unknown' },
+]
+const relationValues = ['related', 'solo', 'unknown']
 const statusValues = ['yes', 'no']
 
 function allSelected(selected: string[], options: string[]) {
@@ -186,12 +199,8 @@ const selectedRows = computed<AdoTableRow[]>({
   },
 })
 
-function onRowClick(event: { data: AdoItem }) {
-  emit('open-detail', event.data.id)
-}
-
 function rowClass(data: AdoTableRow) {
-  return data.groupSize > 1 ? 'grouped-row' : ''
+  return data.relationKind === 'related' ? 'grouped-row' : ''
 }
 
 function stateSeverity(state: string): 'success' | 'info' | 'warn' | 'danger' | 'secondary' {
@@ -213,6 +222,12 @@ function stateSeverity(state: string): 'success' | 'info' | 'warn' | 'danger' | 
 :deep(.p-datatable-thead > tr > th) {
   white-space: nowrap;
   vertical-align: middle;
+}
+:deep(.p-datatable-thead > tr > th.p-datatable-column-sorted),
+:deep(.p-datatable-thead > tr > th.p-datatable-column-sorted .p-datatable-column-header-content),
+:deep(.p-datatable-thead > tr > th.p-datatable-column-sorted .p-datatable-sort-icon) {
+  background: inherit;
+  color: inherit;
 }
 :deep(.p-datatable-thead .filter-control),
 :deep(.p-datatable-thead .p-inputtext),
@@ -240,7 +255,7 @@ function stateSeverity(state: string): 'success' | 'info' | 'warn' | 'danger' | 
   min-height: 2.25rem;
 }
 :deep(.p-datatable-tbody > tr) {
-  cursor: pointer;
+  cursor: default;
 }
 
 .w-full {
@@ -270,8 +285,22 @@ function stateSeverity(state: string): 'success' | 'info' | 'warn' | 'danger' | 
   white-space: normal;
   font-weight: 600;
 }
-.group-redmine {
-  font-weight: 400;
+.no-data {
   color: var(--p-text-secondary-color);
+  font-size: 0.85rem;
+}
+.view-data-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--p-primary-color, #2563eb);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.view-data-link:hover {
+  color: var(--p-primary-600, #1d4ed8);
 }
 </style>

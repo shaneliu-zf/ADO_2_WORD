@@ -1,9 +1,17 @@
 import axios from 'axios'
-import type { AdoItem, Report, Group, PipelineSession } from '@/types'
+import type { AdoItem, AppConfig, Report, Group, PipelineSession } from '@/types'
 
 const http = axios.create({ baseURL: '/' })
 
 // ── Session / items ────────────────────────────────────────────────────────────
+
+export function fetchConfig(): Promise<AppConfig> {
+  return http.get<AppConfig>('/api/config').then(r => r.data)
+}
+
+export function updateConfig(body: AppConfig): Promise<AppConfig> {
+  return http.put<AppConfig>('/api/config', body).then(r => r.data)
+}
 
 export function fetchSession(): Promise<PipelineSession> {
   return http.get<PipelineSession>('/api/session').then(r => r.data)
@@ -33,6 +41,12 @@ export function fetchItemHtml(id: number): Promise<string> {
 
 export function updateItem(id: number, report: Report): Promise<{ ok: boolean }> {
   return http.put<{ ok: boolean }>(`/api/items/${id}`, report).then(r => r.data)
+}
+
+export function uploadItemImage(id: number, file: File): Promise<{ src: string }> {
+  const body = new FormData()
+  body.append('file', file)
+  return http.post<{ src: string }>(`/api/items/${id}/images`, body).then(r => r.data)
 }
 
 export function deleteItems(ids: number[]): Promise<{ deleted: number[] }> {

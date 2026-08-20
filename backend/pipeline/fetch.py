@@ -7,7 +7,6 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import html
 import json
-import re
 import shutil
 import urllib.parse
 import urllib.request
@@ -19,16 +18,7 @@ from backend.utils.ado_client import auth_header, fetch_comments, fetch_updates,
 from backend.utils.config_io import load_config
 from backend.utils.paths import ADO_DIR, STYLE_PATH, VIEWER_HTML_PATH
 from backend.utils.pipeline_io import log, log_stage, log_stage_done, normalize_ids, read_pipeline_json, run_pipeline_main, write_pipeline_json
-from backend.utils.work_item_parser import RELATED_ID_RE, stringify
-
-IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE | re.DOTALL)
-MD_IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
-
-HTML_FIELD_KEYS = {
-    "System.Description",
-    "Microsoft.VSTS.TCM.ReproSteps",
-    "Microsoft.VSTS.TCM.Steps",
-}
+from backend.utils.work_item_parser import RELATED_ID_RE, collect_item_image_urls, stringify
 
 FETCH_WORKERS = 12
 IMAGE_WORKERS = 6
@@ -54,24 +44,28 @@ HISTORY_SKIP_FIELDS = {
 }
 
 
-def collect_image_urls(*html_chunks: str) -> list[str]:
-    urls: list[str] = []
-    seen: set[str] = set()
+def infer_origin(item: dict[str, Any], extra_urls: list[str] | tuple[str, ...] = ()) -> str:
+    candidates: list[str] = []
+    for rel in item.get("relations") or []:
+        if isinstance(rel, dict):
+            candidates.append(str(rel.get("url") or ""))
+    candidates.extend(extra_urls)
+    for url in candidates:
+        if url.startswith(("http://", "https://")):
+            parsed = urllib.parse.urlparse(url)
+            return f"{parsed.scheme}://{parsed.netloc}"
+    return ""
 
-    def add(url: str) -> None:
-        url = html.unescape(url).strip()
-        if url and url not in seen:
-            seen.add(url)
-            urls.append(url)
 
-    for chunk in html_chunks:
-        if not chunk:
-            continue
-        for match in IMG_SRC_RE.finditer(chunk):
-            add(match.group(3))
-        for match in MD_IMG_RE.finditer(chunk):
-            add(match.group(2).split()[0].strip("<>"))
-    return urls
+def absolutize_media_url(url: str, origin: str) -> str:
+    url = html.unescape(url or "").strip()
+    if url.startswith("//"):
+        return "https:" + url
+    if url.startswith(("http://", "https://", "data:")):
+        return url
+    if url.startswith("/") and origin:
+        return origin.rstrip("/") + url
+    return url
 
 
 def safe_filename(url: str, index: int) -> str:
@@ -99,43 +93,54 @@ def download_images(
     media_dir: Path,
     skip_download: bool = False,
 ) -> dict[str, str]:
-    fields = item.get("fields") or {}
-    chunks = [stringify(fields.get(key)) for key in HTML_FIELD_KEYS]
-    chunks.extend(stringify(comment.get("text")) for comment in (item.get("comments") or []))
-    urls = collect_image_urls(*chunks)
+    raw_urls = collect_item_image_urls(item)
+    origin = infer_origin(item, raw_urls)
+    resolved: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw in raw_urls:
+        url = absolutize_media_url(raw, origin)
+        if not url or url.startswith("data:") or url in seen:
+            continue
+        if not url.startswith(("http://", "https://")):
+            log(f"  略過無法下載的圖片網址：{raw}")
+            continue
+        seen.add(url)
+        resolved.append((raw, url))
     url_map: dict[str, str] = {}
-    if not urls:
+    if not resolved:
         return url_map
 
     if not skip_download:
         media_dir.mkdir(parents=True, exist_ok=True)
 
-    pending: list[tuple[str, Path, str, str]] = []
-    for index, url in enumerate(urls, start=1):
+    pending: list[tuple[str, str, Path, str, str]] = []
+    for index, (raw, url) in enumerate(resolved, start=1):
         filename = safe_filename(url, index)
         dest = media_dir / filename
         relative = f"{media_dir.name}/{filename}"
         if dest.exists():
             url_map[url] = relative
+            url_map[raw] = relative
             continue
         if skip_download:
             continue
-        pending.append((url, dest, relative, filename))
+        pending.append((raw, url, dest, relative, filename))
 
-    def download_one(job: tuple[str, Path, str, str]) -> tuple[str, str, str]:
-        url, dest, relative, filename = job
+    def download_one(job: tuple[str, str, Path, str, str]) -> tuple[str, str, str, str]:
+        raw, url, dest, relative, filename = job
         download_file(url, dest, authorization)
-        return url, relative, filename
+        return raw, url, relative, filename
 
     if pending:
         workers = min(IMAGE_WORKERS, len(pending))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             future_map = {pool.submit(download_one, job): job for job in pending}
             for future in as_completed(future_map):
-                url, _dest, _relative, filename = future_map[future]
+                raw, url, _dest, _relative, filename = future_map[future]
                 try:
-                    done_url, relative, done_name = future.result()
+                    done_raw, done_url, relative, done_name = future.result()
                     url_map[done_url] = relative
+                    url_map[done_raw] = relative
                     log(f"  已下載圖片：{done_name}")
                 except Exception as exc:
                     log(f"  圖片下載失敗，保留原網址：{url}（{exc}）")

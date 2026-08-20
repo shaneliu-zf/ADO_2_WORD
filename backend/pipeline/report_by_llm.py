@@ -28,6 +28,9 @@ from backend.utils.pipeline_io import (
 from backend.utils.report_schema import ChangeEntry, Report, TestItem, TestStep
 from backend.utils.work_item_parser import (
     TAG_RE,
+    ADO_COLON_IMG_RE,
+    ADO_COLON_SRC_RE,
+    MD_IMG_RE,
     apply_image_map,
     extract_redmine,
     plain_text,
@@ -43,7 +46,6 @@ IMG_RE = re.compile(
     r"<img\b[^>]*?\bsrc\s*=\s*([\"'])(.*?)\1[^>]*>",
     re.IGNORECASE | re.DOTALL,
 )
-MD_IMG_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 SITE_RE = re.compile(r"(?i)\bSIT[\s\-]?([12])\b")
 ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 LONG_URL_RE = re.compile(r"https?://\S{50,}")
@@ -101,23 +103,32 @@ def resolve_tester(item: dict[str, Any]) -> str:
     return tester
 
 
-def resolve_test_date(item: dict[str, Any]) -> str:
-    """變更歷史中，最後一次離開 Testing 的日期。9999 → 用 ChangedDate。"""
+def _last_state_date(item: dict[str, Any], *, leaving: str | None = None, entering: str | None = None) -> str:
     date_raw = ""
+    target = (leaving or entering or "").casefold()
+    if not target:
+        return ""
     for entry in item.get("history") or []:
         if not isinstance(entry, dict):
             continue
         for change in entry.get("changes") or []:
-            if not isinstance(change, dict):
+            if not isinstance(change, dict) or change.get("field") != "System.State":
                 continue
-            if change.get("field") != "System.State":
-                continue
-            if str(change.get("from") or "").strip().casefold() != "testing":
+            value = change.get("from") if leaving else change.get("to")
+            if str(value or "").strip().casefold() != target:
                 continue
             date_raw = entry.get("date") or ""
-    if date_raw.startswith("9999"):
+    if str(date_raw).startswith("9999"):
         fields = item.get("fields") or {}
         date_raw = plain_text(fields.get("System.ChangedDate"))
+    return date_raw
+
+
+def resolve_test_date(item: dict[str, Any]) -> str:
+    """離開 Testing 的日期；沒進過 Testing 但已 Done，改用進入 Done 那天。"""
+    date_raw = _last_state_date(item, leaving="Testing")
+    if not date_raw:
+        date_raw = _last_state_date(item, entering="Done")
     return format_test_date(date_raw)
 
 
@@ -149,8 +160,14 @@ def simplify_fragment(fragment: str) -> str:
         src = html.unescape(match.group(2).split()[0].strip("<>")).strip()
         return f"\n[img:{src}]\n"
 
+    def repl_colon(match: re.Match[str]) -> str:
+        src_match = ADO_COLON_SRC_RE.search(match.group(1) or "")
+        src = html.unescape((src_match.group(1) if src_match else "")).strip()
+        return f"\n[img:{src}]\n" if src else ""
+
     text = IMG_RE.sub(repl_img, fragment or "")
     text = MD_IMG_RE.sub(repl_md_img, text)
+    text = ADO_COLON_IMG_RE.sub(repl_colon, text)
     text = re.sub(r"(?i)<br\s*/?>", "\n", text)
     text = re.sub(r"(?i)</(p|div|h[1-6]|li|tr|pre|blockquote)>", "\n", text)
     text = re.sub(r"(?i)<(ul|ol)\b[^>]*>", "\n", text)
@@ -227,6 +244,8 @@ def call_test_extract(config: dict[str, Any], user_content: str) -> dict[str, An
             {"role": "user", "content": user_content},
         ],
         config=config,
+        max_tokens=16384,
+        timeout=180,
     )
 
 
@@ -407,6 +426,7 @@ def run_report_by_llm(groups: list[list[int]], config: dict[str, Any] | None = N
         if len(group) > 1:
             log(f"  合併處理：{group_label}")
     processed_paths: dict[int, Path] = {}
+    failures: list[str] = []
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
         future_map = {
             executor.submit(process_group, group, cfg): index
@@ -415,12 +435,21 @@ def run_report_by_llm(groups: list[list[int]], config: dict[str, Any] | None = N
         for future in as_completed(future_map):
             index = future_map[future]
             group = groups[index]
-            path = future.result()
-            processed_paths[index] = path
             group_label = ", ".join(str(value) for value in group)
+            try:
+                path = future.result()
+            except Exception as exc:  # noqa: BLE001 — 單組失敗不丢掉其他組
+                message = f"Work Item {group_label} 失敗：{exc}"
+                failures.append(message)
+                log(message)
+                continue
+            processed_paths[index] = path
             log(f"完成分析 Work Item {group_label}")
             log(f"  已寫入：{path}")
     processed_groups = [groups[index] for index in range(len(groups)) if index in processed_paths]
+    if failures:
+        log_stage_done(f"REPORT 部分完成，成功 {len(processed_groups)} 組、失敗 {len(failures)} 組")
+        raise RuntimeError("\n".join(failures))
     log_stage_done(f"REPORT 完成，共 {len(processed_groups)} 組")
     return processed_groups
 

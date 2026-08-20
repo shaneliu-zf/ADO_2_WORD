@@ -23,6 +23,7 @@ from backend.utils.pipeline_io import add_log_sink, remove_log_sink
 from backend.utils.report_schema import find_report, validate_report
 from backend.utils.work_item_parser import (
     extract_redmine,
+    last_state_actor,
     looks_like_html,
     looks_like_markdown,
     read_work_item,
@@ -387,6 +388,13 @@ def _empty_item(work_item_id: int) -> dict[str, Any]:
         "site": "",
         "category": "",
         "issuePriority": "",
+        "redmineId": "",
+        "assignedTo": "",
+        "createdBy": "",
+        "saBy": "",
+        "engineerBy": "",
+        "testerBy": "",
+        "createdDate": "",
         "fetched": False,
         "grouped": False,
         "hasReport": False,
@@ -425,9 +433,23 @@ def _build_item(
             item["site"] = resolve_site(fields) or item["site"]
             item["category"] = stringify(fields.get("Custom.Category"))
             item["issuePriority"] = stringify(fields.get("Custom.IssuePriority"))
+            item["assignedTo"] = stringify(fields.get("System.AssignedTo"))
+            item["createdBy"] = stringify(fields.get("System.CreatedBy"))
+            item["saBy"] = last_state_actor(payload, "Analyze")
+            item["engineerBy"] = last_state_actor(payload, "Develop")
+            item["testerBy"] = last_state_actor(payload, "Testing")
+            created = stringify(fields.get("System.CreatedDate"))
+            match = re.search(r"(\d{4}-\d{2}-\d{2})", created)
+            item["createdDate"] = match.group(1) if match else created[:10]
+            item["redmineId"] = extract_redmine(payload)
             item["fetched"] = True
             item["hasHtml"] = True
             item["lastUpdated"] = stringify(payload.get("fetched_at")) or _iso_mtime(ado_path)
+
+    if not item["redmineId"] and item["title"]:
+        item["redmineId"] = extract_redmine(
+            {"fields": {"System.Title": item["title"]}, "comments": []}
+        )
 
     report_path, report = _report_path_for(work_item_id)
     if report:
@@ -435,6 +457,8 @@ def _build_item(
         item["site"] = item["site"] or stringify(report.get("site"))
         item["hasReport"] = True
         item["hasJson"] = True
+        if not item["redmineId"]:
+            item["redmineId"] = stringify(report.get("redmine_id"))
         if report_path is not None and report_path.exists() and not item["lastUpdated"]:
             item["lastUpdated"] = _iso_mtime(report_path)
     return item

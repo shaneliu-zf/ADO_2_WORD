@@ -59,7 +59,7 @@ export const useItemsStore = defineStore('items', () => {
           groupKey: related?.primary_id ?? item.id,
           groupSize: groupIds.length,
           groupIds,
-          redmineId: related?.redmine_id ?? '',
+          redmineId: item.redmineId || related?.redmine_id || '',
           isGroupHead: false,
           groupHasReport: false,
           relationKind,

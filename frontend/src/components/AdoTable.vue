@@ -24,9 +24,10 @@
       <template #header>
         <Checkbox
           :modelValue="allChecked"
-          :indeterminate="someChecked && !allChecked"
+          :indeterminate="someChecked"
           binary
           :disabled="selectionLocked"
+          v-tooltip.top="headerSelectHint"
           @update:modelValue="toggleAll"
         />
       </template>
@@ -198,6 +199,20 @@ const itemsStore = useItemsStore()
 const pipelineStore = usePipelineStore()
 const selectionLocked = computed(() => pipelineStore.isRunning)
 
+const headerSelectHint = computed(() => {
+  const visibleIds = collectVisibleIds()
+  const allN = itemsStore.items.length
+  if (!visibleIds.length) return ''
+  const selected = itemsStore.selectedIds
+  const visibleAllSelected = visibleIds.every(id => selected.has(id))
+  const everythingSelected =
+    allN > 0 && itemsStore.items.every(item => selected.has(item.id))
+  if (everythingSelected) return '再按一次取消全選'
+  if (visibleAllSelected && visibleIds.length < allN) return '再按一次選取全部項目'
+  if (visibleIds.length < allN) return '選取目前篩選結果'
+  return '全選'
+})
+
 // 排序狀態
 const sortField = ref<string>('groupKey')
 const sortOrder = ref<1 | -1>(1)
@@ -218,23 +233,32 @@ function groupIdsFor(data: AdoTableRow): number[] {
   return data.relationKind === 'related' ? data.groupIds : [data.id]
 }
 
+/** 目前可見列對應的可選 ID（關聯組含整組） */
+function collectVisibleIds(): number[] {
+  const ids = new Set<number>()
+  for (const row of itemsStore.tableRows) {
+    if (row.relationKind === 'related' && !row.isGroupHead) continue
+    for (const id of groupIdsFor(row)) ids.add(id)
+  }
+  return [...ids]
+}
+
 /** 某列（組）是否全選 */
 function isGroupChecked(data: AdoTableRow): boolean {
   return groupIdsFor(data).every(id => itemsStore.selectedIds.has(id))
 }
 
-/** 全選狀態：所有「需渲染 Checkbox」的列是否都勾選 */
+/** 真全選：清單全部項目都勾選（表頭才顯示打勾） */
 const allChecked = computed(() => {
-  const checkableRows = itemsStore.tableRows.filter(
-    r => r.relationKind !== 'related' || r.isGroupHead,
-  )
-  return checkableRows.length > 0 && checkableRows.every(r => isGroupChecked(r))
+  const allIds = itemsStore.items
+  return allIds.length > 0 && allIds.every(item => itemsStore.selectedIds.has(item.id))
 })
 
-/** 部分選取（用於 indeterminate） */
-const someChecked = computed(() =>
-  itemsStore.tableRows.some(r => itemsStore.selectedIds.has(r.id)),
-)
+/** 半選圖案：有勾選但尚未真全選（含「只選了篩選結果」） */
+const someChecked = computed(() => {
+  if (allChecked.value) return false
+  return itemsStore.selectedIds.size > 0
+})
 
 /** 勾選 / 取消某列代表的整組 */
 function toggleGroup(data: AdoTableRow, checked: boolean) {
@@ -248,16 +272,32 @@ function toggleGroup(data: AdoTableRow, checked: boolean) {
   itemsStore.setSelectedIds([...next])
 }
 
-/** 表頭全選 / 取消全選：只動目前可見列，不影響篩選外已勾選 */
-function toggleAll(checked: boolean) {
+/**
+ * 表頭全選：
+ * 1) 有篩選時先只選目前可見列
+ * 2) 可見列已全選、還有被篩掉的 → 再按一次選全部
+ * 3) 已全選全部 → 取消全選
+ */
+function toggleAll() {
   if (selectionLocked.value) return
-  const visibleIds = itemsStore.tableRows.map(r => r.id)
-  const next = new Set(itemsStore.selectedIds)
-  for (const id of visibleIds) {
-    if (checked) next.add(id)
-    else next.delete(id)
+  const visibleIds = collectVisibleIds()
+  const allIds = itemsStore.items.map(item => item.id)
+  if (!visibleIds.length) return
+
+  const selected = itemsStore.selectedIds
+  const visibleAllSelected = visibleIds.every(id => selected.has(id))
+  const everythingSelected = allIds.length > 0 && allIds.every(id => selected.has(id))
+  const hasHiddenRows = visibleIds.length < allIds.length
+
+  if (everythingSelected) {
+    itemsStore.setSelectedIds([])
+    return
   }
-  itemsStore.setSelectedIds([...next])
+  if (visibleAllSelected && hasHiddenRows) {
+    itemsStore.setSelectedIds(allIds)
+    return
+  }
+  itemsStore.setSelectedIds(visibleIds)
 }
 
 const fetchedOptions = [

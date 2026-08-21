@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from docx import Document
@@ -95,6 +96,14 @@ def clean_step_description(description: str) -> str:
     return cleaned
 
 
+def resolve_step_image(src: str) -> Path:
+    text = str(src).strip().replace("\\", "/")
+    as_is = Path(text)
+    if as_is.is_file():
+        return as_is
+    return ADO_DIR.joinpath(*Path(text).parts)
+
+
 def fill_attachments(doc: Document, attach_heading: etree._Element, report: dict[str, Any]) -> None:
     set_paragraph_bold(attach_heading, bold=True)
     cursor = attach_heading
@@ -110,8 +119,8 @@ def fill_attachments(doc: Document, attach_heading: etree._Element, report: dict
         if not images:
             continue
         for src in images:
-            image_path = ADO_DIR / str(src)
-            if not image_path.exists():
+            image_path = resolve_step_image(src)
+            if not image_path.is_file():
                 log(f"  找不到圖片，略過：{image_path}")
                 continue
             cursor = add_picture_after(doc, cursor, image_path)

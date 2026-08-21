@@ -241,7 +241,8 @@ def add_picture_after(doc: Document, after: etree._Element, image_path: Path) ->
     paragraph.style = doc.styles["FDS內文"]
     run = paragraph.add_run()
     apply_run_font(ensure_child(run._r, "w:rPr"))
-    run.add_picture(str(image_path), width=IMAGE_WIDTH)
+    with image_path.open("rb") as handle:
+        run.add_picture(handle, width=IMAGE_WIDTH)
     elm = paragraph._element
     after.addnext(elm)
     return elm

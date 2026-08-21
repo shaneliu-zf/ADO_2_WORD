@@ -14,6 +14,14 @@
     <div v-if="mode === 'ado'" class="ado-shell">
       <div class="tab-toolbar">
         <Button
+          label="導出 HTML"
+          icon="pi pi-download"
+          size="small"
+          outlined
+          :disabled="!htmlContent || loading"
+          @click="exportHtml"
+        />
+        <Button
           label="從 ADO 更新"
           icon="pi pi-refresh"
           size="small"
@@ -93,6 +101,7 @@ import { useItemsStore } from '@/stores/items'
 import { usePipelineStore } from '@/stores/pipeline'
 import { useConfirm } from 'primevue/useconfirm'
 import { errorMessage } from '@/utils/apiError'
+import { downloadHtmlFile, prepareAdoHtml } from '@/utils/adoHtml'
 import type { AdoItem, Report } from '@/types'
 
 const visible = defineModel<boolean>('visible', { default: false })
@@ -176,6 +185,20 @@ watch(
 
 function onClose() {
   editing.value = false
+}
+
+function exportHtml() {
+  if (!htmlContent.value || !itemId.value) return
+  const html = prepareAdoHtml(htmlContent.value, {
+    absolutizeOrigin: window.location.origin,
+  })
+  downloadHtmlFile(`ado_${itemId.value}.html`, html)
+  toast.add({
+    severity: 'success',
+    summary: '已導出',
+    detail: `ado_${itemId.value}.html`,
+    life: 2500,
+  })
 }
 
 async function refreshAdo() {

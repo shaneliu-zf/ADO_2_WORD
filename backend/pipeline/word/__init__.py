@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import re
-import shutil
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +53,18 @@ def fill_document(doc: Document, reports: list[dict[str, Any]]) -> None:
 def output_path() -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return DOCX_DIR / f"report_{stamp}.docx"
+
+
+def open_docx(path: Path) -> Document:
+    """用位元組讀檔，避開 Windows 對開啟中 docx 上鎖、以及中文路徑問題。"""
+    return Document(BytesIO(path.read_bytes()))
+
+
+def save_docx(doc: Document, path: Path) -> None:
+    buffer = BytesIO()
+    doc.save(buffer)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(buffer.getvalue())
 
 
 def output_docx_name(result: Any) -> str | None:
@@ -112,10 +124,9 @@ def run_word(work_item_ids: list[int]) -> list[str]:
         log(f"  區塊：ADO {label}")
 
     path = output_path()
-    shutil.copy2(TEMPLATE_PATH, path)
-    doc = Document(str(path))
+    doc = open_docx(TEMPLATE_PATH)
     fill_document(doc, reports)
-    doc.save(str(path))
+    save_docx(doc, path)
     log(f"已寫入：{path}")
     log_stage_done(f"WORD 完成，共 1 份、{len(reports)} 個 ADO 區塊")
     return [str(path)]

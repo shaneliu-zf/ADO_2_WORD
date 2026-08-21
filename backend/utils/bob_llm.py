@@ -28,7 +28,7 @@ def load_bob_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
         if not CONFIG_PATH.exists():
             raise FileNotFoundError(
                 f"找不到設定檔：{CONFIG_PATH}\n"
-                "請複製 backend/secrets/config.json.example 為 backend/secrets/config.json，再填入 bob_api_key。"
+                "請在網頁左上角齒輪填寫 IBM Bob API Key 後儲存。"
             )
         config = load_json_file(CONFIG_PATH)
     if not isinstance(config, dict):

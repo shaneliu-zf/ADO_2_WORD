@@ -187,7 +187,15 @@
         </div>
         <div class="field">
           <label>SHA</label>
+          <a
+            v-if="readonly && entry.url"
+            class="ext-link"
+            :href="entry.url"
+            target="_blank"
+            rel="noopener noreferrer"
+          >{{ entry.sha_short || entry.sha || entry.url }}</a>
           <InputText
+            v-else
             :modelValue="entry.sha"
             class="w-full"
             :readonly="readonly"
@@ -208,7 +216,14 @@
         </div>
         <div class="field field-span">
           <label>網址</label>
-          <InputText v-model="entry.url" class="w-full" :readonly="readonly" />
+          <a
+            v-if="readonly && entry.url"
+            class="ext-link"
+            :href="entry.url"
+            target="_blank"
+            rel="noopener noreferrer"
+          >{{ entry.url }}</a>
+          <InputText v-else v-model="entry.url" class="w-full" :readonly="readonly" />
         </div>
       </div>
     </div>
@@ -227,6 +242,7 @@ import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import { uploadItemImage } from '@/api/client'
+import { errorMessage } from '@/utils/apiError'
 import type { CommitEntry, Report, TestItem } from '@/types'
 
 const props = defineProps<{
@@ -336,7 +352,7 @@ async function onStepImagesSelected(event: Event) {
       step.images.push(src)
     }
   } catch (err) {
-    toast.add({ severity: 'error', summary: '上傳失敗', detail: String(err), life: 4000 })
+    toast.add({ severity: 'error', summary: '上傳失敗', detail: errorMessage(err), life: 4000 })
   } finally {
     uploadingStep.value = null
   }
@@ -510,6 +526,18 @@ function imageSrc(src: string): string {
   display: flex;
   justify-content: flex-end;
   padding-top: 0.5rem;
+}
+
+.ext-link {
+  color: var(--p-primary-color, #2563eb);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.ext-link:hover {
+  color: var(--p-primary-600, #1d4ed8);
 }
 
 /* readonly 模式：輸入框反灰 */

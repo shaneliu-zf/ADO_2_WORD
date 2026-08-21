@@ -89,11 +89,32 @@
         <Button :label="confirmRedoLabel" severity="success" @click="confirmRedo" />
       </template>
     </Dialog>
+
+    <Dialog v-model:visible="saveVisible" modal header="合併成 Word" :style="{ width: '28rem' }" @hide="onSaveDialogHide">
+      <p class="confirm-msg">Word 已合併完成，是否下載？</p>
+      <template #footer>
+        <Button label="否" outlined @click="declineSave()" />
+        <Button label="是" severity="success" :loading="savingWord" @click="onSaveWord()" />
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="prereqVisible" modal header="尚有項目未完成前面步驟" :style="{ width: '32rem' }">
+      <p class="confirm-msg">以下勾選項目還沒做完前面的步驟，是否先完成再繼續？</p>
+      <ul class="prereq-list">
+        <li v-for="row in prereqRows" :key="row.id">
+          #{{ row.id }} — 缺：{{ row.missing.join('、') }}
+        </li>
+      </ul>
+      <template #footer>
+        <Button label="取消" outlined severity="secondary" @click="prereqVisible = false" />
+        <Button label="先完成" severity="success" @click="confirmPrereq" />
+      </template>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
@@ -102,18 +123,27 @@ import { STEP_DEFS, usePipelineStore } from '@/stores/pipeline'
 import { useItemsStore } from '@/stores/items'
 import { clearGroups } from '@/api/client'
 import { storeToRefs } from 'pinia'
+import type { AdoItem } from '@/types'
 
 const pipelineStore = usePipelineStore()
 const itemsStore = useItemsStore()
 const toast = useToast()
-const { currentStep, reachedStep, isRunning, runningStep, showLog, status, statusKind, stepProgress } = storeToRefs(pipelineStore)
+const { currentStep, reachedStep, isRunning, runningStep, showLog, status, statusKind, stepProgress, pendingDocx, savingWord } = storeToRefs(pipelineStore)
 
 const pipelineBusy = computed(() => isRunning.value && (runningStep.value ?? -1) >= 0)
 
 const confirmVisible = ref(false)
 const unbindVisible = ref(false)
+const prereqVisible = ref(false)
+const saveVisible = ref(false)
+
+watch(pendingDocx, name => {
+  if (name) saveVisible.value = true
+})
 const confirmKind = ref<'fetch' | 'report'>('fetch')
 const pending = ref<{ script: string; index: number; ids: number[] } | null>(null)
+const prereqRows = ref<Array<{ id: number; missing: string[] }>>([])
+const prereqPending = ref<{ script: string; index: number; ids: number[] } | null>(null)
 
 const hasRelatedGroups = computed(() =>
   itemsStore.groups.some(group => group.ids.length >= 2),
@@ -146,7 +176,6 @@ function shouldShowStepBar(index: number): boolean {
 function stepBarClass(index: number): Record<string, boolean> {
   const isActive = pipelineBusy.value && currentStep.value === index
   const isDone = reachedStep.value >= index && !isActive
-  // indeterminate：執行中但無進度數字（group / word）
   const isIndeterminate = isActive && stepProgress.value === null
   return { done: isDone, indeterminate: isIndeterminate }
 }
@@ -158,7 +187,6 @@ function stepBarStyle(index: number): Record<string, string> {
   if (isActive && stepProgress.value !== null) {
     return { width: `${stepProgress.value}%` }
   }
-  // indeterminate：寬度由 CSS animation 控制，不設 inline width
   return {}
 }
 
@@ -181,8 +209,40 @@ function selectedWithFlag(flag: 'hasHtml' | 'hasJson'): number[] {
   return itemsStore.items.filter(item => selected.has(item.id) && item[flag]).map(item => item.id)
 }
 
-function startRun(script: string, ids: number[], index: number, workingIds?: number[]) {
-  pipelineStore.runScript(script, ids, index, workingIds)
+function missingPrereqs(stepIndex: number, item: AdoItem): string[] {
+  const missing: string[] = []
+  if (stepIndex >= 2 && !item.fetched) missing.push('下載資料')
+  if (stepIndex >= 3 && !item.grouped) missing.push('關聯分組')
+  if (stepIndex >= 4 && !item.hasJson) missing.push('產生報告')
+  return missing
+}
+
+function collectPrereqGaps(stepIndex: number, ids: number[]) {
+  const idSet = new Set(ids)
+  return itemsStore.items
+    .filter(item => idSet.has(item.id))
+    .map(item => ({ id: item.id, missing: missingPrereqs(stepIndex, item) }))
+    .filter(row => row.missing.length > 0)
+}
+
+function startRun(script: string, ids: number[], index: number) {
+  void pipelineStore.runScript(script, ids, index)
+}
+
+function proceedAfterPrereqCheck(script: string, ids: number[], index: number) {
+  if (index === 1 && selectedWithFlag('hasHtml').length) {
+    pending.value = { script, index, ids }
+    confirmKind.value = 'fetch'
+    confirmVisible.value = true
+    return
+  }
+  if (index === 3 && selectedWithFlag('hasJson').length) {
+    pending.value = { script, index, ids }
+    confirmKind.value = 'report'
+    confirmVisible.value = true
+    return
+  }
+  startRun(script, ids, index)
 }
 
 function runCurrent() {
@@ -200,19 +260,43 @@ function runCurrent() {
     return
   }
 
-  if (step.index === 1 && selectedWithFlag('hasHtml').length) {
-    pending.value = { script: step.script, index: step.index, ids }
-    confirmKind.value = 'fetch'
-    confirmVisible.value = true
+  const gaps = collectPrereqGaps(step.index, ids)
+  if (gaps.length) {
+    prereqRows.value = gaps
+    prereqPending.value = { script: step.script, index: step.index, ids }
+    prereqVisible.value = true
     return
   }
-  if (step.index === 3 && selectedWithFlag('hasJson').length) {
-    pending.value = { script: step.script, index: step.index, ids }
-    confirmKind.value = 'report'
-    confirmVisible.value = true
-    return
+
+  proceedAfterPrereqCheck(step.script, ids, step.index)
+}
+
+async function confirmPrereq() {
+  const job = prereqPending.value
+  prereqVisible.value = false
+  prereqPending.value = null
+  if (!job) return
+
+  const idSet = new Set(job.ids)
+  const selected = itemsStore.items.filter(item => idSet.has(item.id))
+  const needFetch = job.index >= 2 ? selected.filter(i => !i.fetched).map(i => i.id) : []
+  const needGroup = job.index >= 3 ? selected.filter(i => !i.grouped).map(i => i.id) : []
+  const needReport = job.index >= 4 ? selected.filter(i => !i.hasJson).map(i => i.id) : []
+
+  if (needFetch.length) {
+    const ok = await pipelineStore.runScript('fetch', needFetch, 1)
+    if (!ok) return
   }
-  startRun(step.script, ids, step.index)
+  if (needGroup.length) {
+    const ok = await pipelineStore.runScript('group', needGroup, 2)
+    if (!ok) return
+  }
+  if (needReport.length) {
+    const ok = await pipelineStore.runScript('report', needReport, 3)
+    if (!ok) return
+  }
+
+  proceedAfterPrereqCheck(job.script, job.ids, job.index)
 }
 
 function confirmRedo() {
@@ -220,7 +304,7 @@ function confirmRedo() {
   confirmVisible.value = false
   pending.value = null
   if (!job) return
-  startRun(job.script, job.ids, job.index, job.ids)
+  startRun(job.script, job.ids, job.index)
 }
 
 async function confirmSkip() {
@@ -235,10 +319,10 @@ async function confirmSkip() {
   )
   const remaining = job.ids.filter(id => !done.has(id))
   if (!remaining.length) {
-    await pipelineStore.skipStep(job.index, job.ids)
+    await pipelineStore.skipStep(job.index)
     return
   }
-  startRun(job.script, remaining, job.index, job.ids)
+  startRun(job.script, remaining, job.index)
 }
 
 async function onPrevStep() {
@@ -257,9 +341,34 @@ async function prevWithoutUnbind() {
 async function prevWithUnbind() {
   unbindVisible.value = false
   const ids = resolveIds()
-  await clearGroups(ids.length ? ids : undefined)
+  if (!ids.length) {
+    toast.add({
+      severity: 'warn',
+      summary: '尚未勾選',
+      detail: '請先勾選要解綁的項目；未勾選時不會解綁全部。',
+      life: 3500,
+    })
+    await pipelineStore.prevStep()
+    return
+  }
+  await clearGroups(ids)
   await itemsStore.refresh()
   await pipelineStore.prevStep()
+}
+
+async function onSaveWord() {
+  const ok = await pipelineStore.savePendingWord()
+  if (ok) saveVisible.value = false
+}
+
+function declineSave() {
+  saveVisible.value = false
+  pipelineStore.dismissPendingWord()
+}
+
+function onSaveDialogHide() {
+  if (savingWord.value) return
+  if (pendingDocx.value) pipelineStore.dismissPendingWord()
 }
 
 function runAll() {
@@ -274,7 +383,7 @@ function runAll() {
     pipelineStore.setStatus('請先在左邊勾選要處理的 ADO。', 'error')
     return
   }
-  pipelineStore.runScript('main', ids, 0, ids)
+  pipelineStore.runScript('main', ids, 0)
 }
 </script>
 
@@ -485,5 +594,14 @@ function runAll() {
 .confirm-msg {
   margin: 0;
   line-height: 1.5;
+}
+
+.prereq-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+  max-height: 240px;
+  overflow-y: auto;
+  line-height: 1.5;
+  font-size: 0.9rem;
 }
 </style>

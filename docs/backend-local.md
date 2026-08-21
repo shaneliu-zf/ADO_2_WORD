@@ -47,8 +47,8 @@ fetch → group → report_by_llm → word
 | --- | --- | --- | --- |
 | `fetch` | ID 陣列 | 成功抓到的 ID | `backend/output/ado/` |
 | `group` | ID 陣列 | 分組 `[[id, id], …]` | — |
-| `report_by_llm` | ID 或分組 | 處理完的分組 | `backend/output/json/` |
-| `word` | ID 或分組 | docx 路徑（單一） | `backend/output/report_*.docx` |
+| `report_by_llm` | ID 或分組 | 處理完的分組 | `backend/output/json/`（寫入前會驗證報告 JSON） |
+| `word` | ID 或分組 | docx 路徑（單一） | CLI 寫 `backend/output/report_*.docx`；網頁下載後會刪 |
 
 輸入格式：
 
@@ -62,4 +62,4 @@ fetch → group → report_by_llm → word
 [[902, 939], [1329]]
 ```
 
-主要檔案：`backend/pipeline/` 各步驟、`backend/pipeline/run.py`（`run_step`／`run_from`）。
+主要檔案：`backend/app.py`（HTTP 路由）、`backend/workspace.py`／`backend/items.py`（工作區與項目）、`backend/pipeline/` 各步驟、`backend/pipeline/run.py`（`run_step`／`run_from`）、`backend/pipeline/word/`（`oxml.py`／`blocks.py`／`toc.py`）、`backend/utils/report_schema.py`（報告 JSON）。

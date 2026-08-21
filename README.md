@@ -40,7 +40,7 @@ chmod +x start-mac.command
 | --- | --- |
 | ADO 組織 | Azure DevOps 網址裡的組織名稱 |
 | ADO 專案 | 專案名稱 |
-| PAT | Azure DevOps 個人存取權杖，至少要有 Work Items 讀取權限 |
+| PAT | Azure DevOps 個人存取權杖；需要 Work Items 讀取，以及 Code 讀取（用來補 Commit 作者與訊息） |
 | IBM Bob API Key | [申請 Inference key](https://bob.ibm.com/docs/ide/account/api-keys) |
 
 存檔即可。這些資料只存在你電腦上的 `backend/secrets/config.json`，不要提交到 git。
@@ -50,7 +50,7 @@ chmod +x start-mac.command
 1. 按左上角「載入 ID」，貼上或填入要處理的 Issue。
 2. 在左邊表格勾選要做成報告的項目。
 3. 右邊按「全流程自動完成」（只處理勾選項目，從下載開始），或依步驟執行（下載 → 分組 → 產生報告 → 合併成 Word）。
-4. 完成後，Word 在 `backend/output/`，檔名類似 `report_20260820_110000.docx`。
+4. 完成後畫面會請你選擇儲存位置（檔名類似 `report_20260820_110000.docx`）。存完後後端會刪掉暫存檔。
 
 建議先勾 1 筆試跑，確認設定沒問題再勾多筆。
 

@@ -1,16 +1,19 @@
 import axios from 'axios'
 import type { AdoItem, AppConfig, Report, Group, PipelineSession } from '@/types'
+import { errorMessage } from '@/utils/apiError'
 
 const http = axios.create({ baseURL: '/' })
 
-function unwrapApiError(error: unknown): never {
-  if (axios.isAxiosError(error)) {
-    const data = error.response?.data as { message?: string; error?: string } | undefined
-    const message = data?.message || data?.error || error.message
-    throw new Error(message)
-  }
-  throw error
-}
+http.interceptors.response.use(
+  response => response,
+  (error: unknown) => {
+    if (axios.isAxiosError(error)) {
+      const data = error.response?.data as { message?: string; error?: string } | undefined
+      return Promise.reject(new Error(data?.message || data?.error || error.message))
+    }
+    return Promise.reject(error instanceof Error ? error : new Error(errorMessage(error)))
+  },
+)
 
 // ── Session / items ────────────────────────────────────────────────────────────
 
@@ -34,6 +37,7 @@ export function updateSession(body: {
   ids?: number[]
   listed?: boolean
   restoreListed?: boolean
+  selectedIds?: number[]
   currentStep?: number
   reachedStep?: number
 }): Promise<PipelineSession> {
@@ -69,7 +73,7 @@ export function regenerateReport(id: number): Promise<Report> {
 }
 
 export function updateItem(id: number, report: Report): Promise<{ ok: boolean }> {
-  return http.put<{ ok: boolean }>(`/api/items/${id}`, report).then(r => r.data).catch(unwrapApiError)
+  return http.put<{ ok: boolean }>(`/api/items/${id}`, report).then(r => r.data)
 }
 
 export function uploadItemImage(id: number, file: File): Promise<{ src: string }> {
@@ -86,18 +90,18 @@ export function fetchGroups(): Promise<Group[]> {
   return http.get<Group[]>('/api/groups').then(r => r.data)
 }
 
-export function clearGroups(ids?: number[]): Promise<{ ok: boolean }> {
-  return http.delete<{ ok: boolean }>('/api/groups', { data: { ids: ids ?? [] } }).then(r => r.data)
+export function clearGroups(ids: number[]): Promise<{ ok: boolean }> {
+  return http.delete<{ ok: boolean }>('/api/groups', { data: { ids } }).then(r => r.data)
 }
 
 // ── Pipeline ───────────────────────────────────────────────────────────────────
 
 /** Run a pipeline script; returns a native Response for SSE streaming. */
-export function runPipeline(script: string, ids: number[], workingIds?: number[]): Promise<Response> {
+export function runPipeline(script: string, ids: number[]): Promise<Response> {
   return fetch('/api/pipeline/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ script, ids, workingIds }),
+    body: JSON.stringify({ script, ids }),
   })
 }
 
@@ -105,6 +109,39 @@ export function abortPipeline(): Promise<{ ok: boolean; message: string }> {
   return http.post<{ ok: boolean; message: string }>('/api/pipeline/abort').then(r => r.data)
 }
 
-export function downloadWord(): void {
-  window.location.href = '/api/pipeline/download'
+function filenameFromDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header)
+  if (utf8?.[1]) return decodeURIComponent(utf8[1])
+  const quoted = /filename="([^"]+)"/i.exec(header)
+  if (quoted?.[1]) return quoted[1]
+  const plain = /filename=([^;]+)/i.exec(header)
+  return plain?.[1]?.trim() || fallback
+}
+
+/** 下載剛產出的 Word；後端傳完會刪檔。 */
+export async function downloadPipelineWord(filename?: string): Promise<string> {
+  const query = filename ? `?file=${encodeURIComponent(filename)}` : ''
+  const response = await fetch(`/api/pipeline/download${query}`)
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`
+    try {
+      const data = (await response.json()) as { message?: string; error?: string }
+      message = data.message || data.error || message
+    } catch {
+      // 不是 JSON 錯誤時沿用 HTTP 狀態
+    }
+    throw new Error(message)
+  }
+  const blob = await response.blob()
+  const name = filenameFromDisposition(response.headers.get('Content-Disposition'), filename || 'report.docx')
+  const href = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = href
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(href)
+  return name
 }

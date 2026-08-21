@@ -6,8 +6,6 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import html
-import json
-import shutil
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -16,7 +14,8 @@ from typing import Any
 
 from backend.utils.ado_client import auth_header, fetch_comments, fetch_git_commit, fetch_updates, fetch_work_item
 from backend.utils.config_io import load_config
-from backend.utils.paths import ADO_DIR, STYLE_PATH, VIEWER_HTML_PATH
+from backend.utils.json_io import write_json
+from backend.utils.paths import ADO_DIR, ado_files_dir, ado_json_path
 from backend.utils.pipeline_io import log, log_stage, log_stage_done, normalize_ids, read_pipeline_json, run_pipeline_main, write_pipeline_json
 from backend.utils.work_item_parser import RELATED_ID_RE, collect_item_image_urls, extract_commits, stringify
 
@@ -156,7 +155,13 @@ def enrich_commits(item: dict[str, Any], config: dict[str, Any], authorization: 
 
     def fill_one(commit: dict[str, str]) -> dict[str, str]:
         try:
-            payload = fetch_git_commit(config, authorization, commit["repo_id"], commit["sha"])
+            payload = fetch_git_commit(
+                config,
+                authorization,
+                commit["repo_id"],
+                commit["sha"],
+                project=commit.get("project_id") or None,
+            )
         except Exception as exc:
             log(f"  Commit 詳情失敗，保留 SHA：{commit.get('sha_short') or commit.get('sha')}（{exc}）")
             return commit
@@ -270,43 +275,15 @@ def save_work_item(
     config: dict[str, Any] | None = None,
 ) -> Path:
     work_item_id = item["id"]
-    media_dir = ADO_DIR / f"work_item_{work_item_id}_files"
+    media_dir = ado_files_dir(work_item_id)
     if config is not None:
         item["commits"] = enrich_commits(item, config, authorization)
     else:
         item["commits"] = extract_commits(item)
     item["images"] = download_images(item, authorization, media_dir, skip_download=skip_download)
-    path = ADO_DIR / f"work_item_{work_item_id}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(item, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path = ado_json_path(work_item_id)
+    write_json(path, item)
     return path
-
-
-def save_index(items: list[dict[str, Any]]) -> Path:
-    payload = {
-        "items": [
-            {
-                "id": item["id"],
-                "title": stringify(item.get("title")),
-                "state": stringify(item.get("state")),
-                "work_item_type": stringify(item.get("work_item_type")),
-            }
-            for item in items
-        ]
-    }
-    path = ADO_DIR / "index.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return path
-
-
-def copy_viewer() -> None:
-    if not VIEWER_HTML_PATH.exists():
-        raise FileNotFoundError(f"找不到預覽頁：{VIEWER_HTML_PATH}")
-    if not STYLE_PATH.exists():
-        raise FileNotFoundError(f"找不到樣式：{STYLE_PATH}")
-    shutil.copy2(VIEWER_HTML_PATH, ADO_DIR / "index.html")
-    shutil.copy2(STYLE_PATH, ADO_DIR / "style.css")
 
 
 def fetch_one_work_item(
@@ -338,7 +315,6 @@ def run_fetch(work_item_ids: list[int], *, no_images: bool = False) -> list[int]
     fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     results_by_id: dict[int, dict[str, Any]] = {}
     ADO_DIR.mkdir(parents=True, exist_ok=True)
-    copy_viewer()
     worker_count = min(FETCH_WORKERS, max(1, len(work_item_ids)))
     log(f"使用 {worker_count} 個 worker 平行抓取 …")
 
@@ -368,9 +344,6 @@ def run_fetch(work_item_ids: list[int], *, no_images: bool = False) -> list[int]
             )
 
     results = [results_by_id[work_item_id] for work_item_id in work_item_ids if work_item_id in results_by_id]
-    index_path = save_index(results)
-    log(f"目錄：{index_path}")
-    log(f"預覽：{ADO_DIR / 'index.html'}（請用 python3 -m backend.app 開啟）")
     log_stage_done(f"FETCH 完成，成功 {len(results)} 筆")
     return [int(item["id"]) for item in results]
 

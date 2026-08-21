@@ -14,7 +14,8 @@ from typing import Any
 
 from backend.pipeline.group import group_work_item_ids
 from backend.utils.bob_llm import BOB_MODEL, chat_json, load_bob_config
-from backend.utils.paths import JSON_DIR, LLM_PROMPT_PATH
+from backend.utils.json_io import write_json
+from backend.utils.paths import JSON_DIR, LLM_PROMPT_PATH, report_json_path
 from backend.utils.pipeline_io import (
     log,
     log_stage,
@@ -25,11 +26,13 @@ from backend.utils.pipeline_io import (
     run_pipeline_main,
     write_pipeline_json,
 )
-from backend.utils.report_schema import CommitEntry, Report, TestItem, TestStep
+from backend.utils.report_schema import CommitEntry, Report, TestItem, TestStep, validate_report
 from backend.utils.work_item_parser import (
     TAG_RE,
     ADO_COLON_IMG_RE,
     ADO_COLON_SRC_RE,
+    CUSTOM_CONTEXT_KEYS,
+    IMG_TAG_RE,
     MD_IMG_RE,
     apply_image_map,
     extract_commits,
@@ -42,16 +45,10 @@ from backend.utils.work_item_parser import (
 
 REVIEWER = ""
 TEST_ENVIRONMENT = "QAS"
-
-IMG_RE = re.compile(
-    r"<img\b[^>]*?\bsrc\s*=\s*([\"'])(.*?)\1[^>]*>",
-    re.IGNORECASE | re.DOTALL,
-)
 SITE_RE = re.compile(r"(?i)\bSIT[\s\-]?([12])\b")
 ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 LONG_URL_RE = re.compile(r"https?://\S{50,}")
 EMPTY_FIELD = {"", "（空）", "-", "n/a", "na"}
-CUSTOM_CONTEXT_KEYS = ["Case", "Step", "Program", "Category", "Tag", "PrimaryCause", "Solution"]
 COMMENT_KEEP_RE = re.compile(
     r"(?i)(?:step\s*\d|[復複]測|測試\s*ok|测试\s*ok|tested\s*pass|測試通過|测试通过|測試完成|\bpass\b|\bfail\b)",
 )
@@ -166,7 +163,7 @@ def simplify_fragment(fragment: str) -> str:
         src = html.unescape((src_match.group(1) if src_match else "")).strip()
         return f"\n[img:{src}]\n" if src else ""
 
-    text = IMG_RE.sub(repl_img, fragment or "")
+    text = IMG_TAG_RE.sub(repl_img, fragment or "")
     text = MD_IMG_RE.sub(repl_md_img, text)
     text = ADO_COLON_IMG_RE.sub(repl_colon, text)
     text = re.sub(r"(?i)<br\s*/?>", "\n", text)
@@ -397,19 +394,15 @@ def process_group(work_item_ids: list[int], config: dict[str, Any]) -> Path:
             last_err = exc
     if last_err is not None:
         raise last_err
-    report = build_report(items, metas, llm_data)
+    report = validate_report(build_report(items, metas, llm_data), source=f"work_item_{min(work_item_ids)}")
 
     primary_id = min(work_item_ids)
-    out_path = JSON_DIR / f"work_item_{primary_id}.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    out_path = report_json_path(primary_id)
+    write_json(out_path, report)
     for work_item_id in work_item_ids:
-        for stale_path in (
-            JSON_DIR / f"work_item_{work_item_id}.json",
-            JSON_DIR / f"work_item_{work_item_id}_test.json",
-        ):
-            if stale_path != out_path and stale_path.exists():
-                stale_path.unlink()
+        extra = report_json_path(work_item_id)
+        if extra != out_path:
+            extra.unlink(missing_ok=True)
     return out_path
 
 

@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { runPipeline, abortPipeline, fetchSession, updateSession } from '@/api/client'
+import { runPipeline, abortPipeline, downloadPipelineWord, fetchSession, updateSession } from '@/api/client'
+import { readSseStream } from '@/composables/useSse'
+import { errorMessage } from '@/utils/apiError'
 import { useItemsStore } from './items'
 import type { PipelineSession } from '@/types'
 
@@ -8,7 +10,7 @@ export const STEP_DEFS = [
   { index: 1, script: 'fetch', label: '下載資料', hint: '下載描述、圖片與變動歷史' },
   { index: 2, script: 'group', label: '關聯分組', hint: 'Related Work Item 合併成一組' },
   { index: 3, script: 'report', label: '產生報告', hint: '整理成測試報告 JSON（會扣 Bobcoins）' },
-  { index: 4, script: 'word', label: '合併成Word', hint: '填進範本，寫出 report_*.docx' },
+  { index: 4, script: 'word', label: '合併成Word', hint: '填進範本，完成後下載 Word' },
 ] as const
 const LAST_STEP = 4
 
@@ -33,6 +35,8 @@ export const usePipelineStore = defineStore('pipeline', () => {
   const statusKind = ref<'info' | 'error' | ''>('')
   // 當前執行步驟的進度 0-100，null 表示無法解析（indeterminate）
   const stepProgress = ref<number | null>(null)
+  const pendingDocx = ref<string | null>(null)
+  const savingWord = ref(false)
   // 解析進度用的內部狀態
   let _progressTotal = 0
   let _progressDone = 0
@@ -42,13 +46,15 @@ export const usePipelineStore = defineStore('pipeline', () => {
     statusKind.value = kind
   }
 
-  function applySession(session: PipelineSession) {
+  function applySession(session: Pick<PipelineSession, 'currentStep' | 'reachedStep'>) {
     currentStep.value = session.currentStep
     reachedStep.value = session.reachedStep
   }
 
   async function loadSession() {
-    applySession(await fetchSession())
+    const session = await fetchSession()
+    applySession(session)
+    return session
   }
 
   async function resetToStart() {
@@ -57,10 +63,11 @@ export const usePipelineStore = defineStore('pipeline', () => {
     logs.value = []
     showLog.value = false
     stepProgress.value = null
+    pendingDocx.value = null
     setStatus('從下載資料開始，每次只處理目前勾選的項目。')
   }
 
-  function _parseLogProgress(line: string, script: string): void {
+  function parseLogProgress(line: string): void {
     // 全流程 main 依序執行 fetch → group → report → word，
     // 每次進入新步驟時 total 會被重設
     const fetchTotal = TOTAL_FETCH_RE.exec(line)
@@ -85,7 +92,7 @@ export const usePipelineStore = defineStore('pipeline', () => {
     }
   }
 
-  async function runScript(script: string, ids: number[], stepIndex: number, workingIds?: number[]): Promise<boolean> {
+  async function runScript(script: string, ids: number[], stepIndex: number): Promise<boolean> {
     if (isRunning.value) return false
     isRunning.value = true
     runningStep.value = stepIndex
@@ -94,12 +101,11 @@ export const usePipelineStore = defineStore('pipeline', () => {
     _progressTotal = 0
     _progressDone = 0
     let failed = false
-    const label =
-      stepIndex === 0 ? '全流程自動完成' : stepIndex < 0 ? '列出 ID' : stepLabel(stepIndex)
+    const label = stepIndex === 0 ? '全流程自動完成' : stepLabel(stepIndex)
     setStatus(`正在執行「${label}」…`)
 
     try {
-      const response = await runPipeline(script, ids, workingIds)
+      const response = await runPipeline(script, ids)
       if (!response.ok || !response.body) {
         logs.value.push(`[Error] HTTP ${response.status}`)
         setStatus(`執行失敗：HTTP ${response.status}`, 'error')
@@ -108,68 +114,44 @@ export const usePipelineStore = defineStore('pipeline', () => {
         return false
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-
-        for (const part of parts) {
-          const dataLine = part
-            .split('\n')
-            .find(l => l.startsWith('data: '))
-          if (!dataLine) continue
-          try {
-            const event = JSON.parse(dataLine.slice(6)) as {
-              type: string
-              line?: string
-              message?: string
-              currentStep?: number
-              reachedStep?: number
-              ids?: number[]
-              listedIds?: number[]
-            }
-            if (event.type === 'log' && event.line != null) {
-              logs.value.push(event.line)
-              _parseLogProgress(event.line, script)
-            } else if (event.type === 'error') {
-              failed = true
-              logs.value.push(`[Error] ${event.message ?? ''}`)
-              setStatus(event.message ?? '執行失敗', 'error')
-            } else if (event.type === 'done') {
-              applySession({
-                ids: event.ids ?? [],
-                listedIds: event.listedIds ?? [],
-                currentStep: event.currentStep ?? currentStep.value,
-                reachedStep: event.reachedStep ?? reachedStep.value,
-              })
-              if (script === 'list_ids') {
-                setStatus(`已列出 ${event.ids?.length ?? 0} 筆。`)
-              } else if (reachedStep.value >= LAST_STEP) {
-                setStatus('流程都跑完了。')
-              } else {
-                setStatus(`「${label}」完成。下一步：${stepLabel(currentStep.value)}`)
-              }
-            }
-          } catch {
-            // ignore parse errors
+      await readSseStream(response.body, event => {
+        if (event.type === 'log' && event.line != null) {
+          logs.value.push(event.line)
+          parseLogProgress(event.line)
+        } else if (event.type === 'error') {
+          failed = true
+          logs.value.push(`[Error] ${event.message ?? ''}`)
+          setStatus(event.message ?? '執行失敗', 'error')
+        } else if (event.type === 'done') {
+          applySession({
+            ids: event.ids ?? [],
+            listedIds: event.listedIds ?? [],
+            currentStep: event.currentStep ?? currentStep.value,
+            reachedStep: event.reachedStep ?? reachedStep.value,
+          })
+          if (event.docx) {
+            pendingDocx.value = event.docx
+            setStatus('Word 已合併完成。')
+          } else if (reachedStep.value >= LAST_STEP) {
+            setStatus('流程都跑完了。')
+          } else {
+            setStatus(`「${label}」完成。下一步：${stepLabel(currentStep.value)}`)
           }
         }
-      }
+      })
 
       if (!failed) {
-        await useItemsStore().refresh()
+        try {
+          await useItemsStore().refresh()
+        } catch (err) {
+          logs.value.push(`[Refresh error] ${errorMessage(err)}`)
+          setStatus(`步驟已完成，但重新整理清單失敗：${errorMessage(err)}`, 'error')
+        }
       }
     } catch (err) {
       failed = true
-      logs.value.push(`[Network error] ${String(err)}`)
-      setStatus(String(err), 'error')
+      logs.value.push(`[Network error] ${errorMessage(err)}`)
+      setStatus(errorMessage(err), 'error')
     } finally {
       isRunning.value = false
       runningStep.value = null
@@ -178,25 +160,58 @@ export const usePipelineStore = defineStore('pipeline', () => {
     return !failed
   }
 
+  async function savePendingWord(): Promise<boolean> {
+    const filename = pendingDocx.value
+    if (!filename || savingWord.value) return false
+    savingWord.value = true
+    try {
+      const saved = await downloadPipelineWord(filename)
+      pendingDocx.value = null
+      setStatus(`Word 已儲存：${saved}`)
+      logs.value.push(`已儲存 ${saved}（後端已刪除暫存檔）`)
+      return true
+    } catch (err) {
+      if (isDownloadCancelled(err)) {
+        setStatus('已取消下載。')
+        return false
+      }
+      logs.value.push(`[Download error] ${errorMessage(err)}`)
+      setStatus(`儲存失敗：${errorMessage(err)}`, 'error')
+      return false
+    } finally {
+      savingWord.value = false
+    }
+  }
+
+  function dismissPendingWord() {
+    pendingDocx.value = null
+    setStatus('已略過下載。')
+  }
+
   async function abortScript() {
     try {
       const result = await abortPipeline()
       logs.value.push(`[中止] ${result.message}`)
       setStatus(result.message, 'error')
     } catch (err) {
-      logs.value.push(`[中止失敗] ${String(err)}`)
+      logs.value.push(`[中止失敗] ${errorMessage(err)}`)
     }
   }
 
-  async function skipStep(stepIndex: number, ids: number[]) {
+  async function skipStep(stepIndex: number) {
     const next = Math.min(stepIndex + 1, LAST_STEP)
     const session = await updateSession({
-      ids,
       currentStep: next,
       reachedStep: Math.max(reachedStep.value, stepIndex),
     })
     applySession(session)
-    await useItemsStore().refresh()
+    try {
+      await useItemsStore().refresh()
+    } catch (err) {
+      logs.value.push(`[Refresh error] ${errorMessage(err)}`)
+      setStatus(`已略過步驟，但重新整理清單失敗：${errorMessage(err)}`, 'error')
+      return
+    }
     if (reachedStep.value >= LAST_STEP) {
       setStatus('流程都跑完了。')
     } else {
@@ -224,10 +239,14 @@ export const usePipelineStore = defineStore('pipeline', () => {
     status,
     statusKind,
     stepProgress,
+    pendingDocx,
+    savingWord,
     applySession,
     loadSession,
     resetToStart,
     runScript,
+    savePendingWord,
+    dismissPendingWord,
     abortScript,
     prevStep,
     skipStep,

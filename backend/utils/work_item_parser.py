@@ -9,7 +9,8 @@ import re
 import urllib.parse
 from typing import Any
 
-from backend.utils.paths import ADO_DIR
+from backend.utils.json_io import read_json
+from backend.utils.paths import ado_json_path
 
 
 TAG_RE = re.compile(r"<[^>]+>")
@@ -22,6 +23,51 @@ GIT_COMMIT_SHA_RE = re.compile(r"(?i)^[0-9a-f]{40}$")
 GIT_COMMIT_VSTFS_RE = re.compile(r"(?i)^vstfs:///Git/Commit/(.+)$")
 GIT_COMMIT_WEB_RE = re.compile(r"(?i)/_git/[^/]+/commit/([0-9a-f]{7,40})\b")
 IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc\s*=\s*)(["\'])(.*?)\2', re.IGNORECASE | re.DOTALL)
+IMG_TAG_RE = re.compile(
+    r"<img\b[^>]*?\bsrc\s*=\s*(['\"])(.*?)\1[^>]*>",
+    re.IGNORECASE | re.DOTALL,
+)
+CUSTOM_FIELD_NAMES = [
+    "Case",
+    "Step",
+    "Program",
+    "Category",
+    "Systems",
+    "Tag",
+    "IssuePriority",
+    "PrimaryCause",
+    "Solution",
+]
+CUSTOM_LLM_CONTEXT_NAMES = {
+    "Case",
+    "Step",
+    "Program",
+    "Category",
+    "Tag",
+    "PrimaryCause",
+    "Solution",
+}
+CUSTOM_KEYS = [f"Custom.{name}" for name in CUSTOM_FIELD_NAMES]
+CUSTOM_CONTEXT_KEYS = [name for name in CUSTOM_FIELD_NAMES if name in CUSTOM_LLM_CONTEXT_NAMES]
+META_KEYS = [
+    "System.Id",
+    "System.WorkItemType",
+    "System.Title",
+    "System.State",
+    "System.AssignedTo",
+    "System.CreatedBy",
+    "System.CreatedDate",
+    "System.ChangedBy",
+    "System.ChangedDate",
+    "System.AreaPath",
+    "System.IterationPath",
+    "System.Tags",
+]
+HTML_KEYS = {
+    "System.Description",
+    "Microsoft.VSTS.TCM.ReproSteps",
+    "Microsoft.VSTS.TCM.Steps",
+}
 MD_IMG_RE = re.compile(
     r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:[ \t]+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
 )
@@ -59,12 +105,12 @@ def plain_text(value: Any) -> str:
 
 
 def read_work_item(work_item_id: int) -> dict[str, Any]:
-    path = ADO_DIR / f"work_item_{work_item_id}.json"
+    path = ado_json_path(work_item_id)
     if not path.exists():
         raise FileNotFoundError(
             f"找不到 ADO JSON：{path}。請先執行 python3 -m backend.pipeline.fetch"
         )
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = read_json(path)
     if not isinstance(payload, dict):
         raise ValueError(f"{path} 必須是 JSON 物件")
     return payload

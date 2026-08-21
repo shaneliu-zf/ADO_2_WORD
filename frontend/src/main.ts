@@ -19,7 +19,8 @@ app.use(PrimeVue, {
   theme: {
     preset: Aura,
     options: {
-      darkModeSelector: '.dark-mode',
+      // 關掉系統深色模式；沒有切換 UI，一律淺色
+      darkModeSelector: false,
     },
   },
 })

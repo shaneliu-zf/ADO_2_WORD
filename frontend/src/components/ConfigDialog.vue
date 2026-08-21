@@ -1,6 +1,6 @@
 <template>
   <Dialog
-    v-model:visible="visibleModel"
+    v-model:visible="visible"
     :header="required ? '請先填寫設定' : '設定'"
     modal
     :closable="!required"
@@ -49,15 +49,14 @@
       <p v-if="error" class="error">{{ error }}</p>
     </div>
     <template #footer>
-      <Button v-if="!required" label="取消" outlined severity="secondary" @click="visibleModel = false" />
+      <Button v-if="!required" label="取消" outlined severity="secondary" @click="visible = false" />
       <Button label="儲存" icon="pi pi-save" :loading="saving" :disabled="loading" @click="handleSave" />
     </template>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import axios from 'axios'
+import { reactive, ref } from 'vue'
 import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
@@ -65,6 +64,7 @@ import Password from 'primevue/password'
 import ProgressSpinner from 'primevue/progressspinner'
 import { useToast } from 'primevue/usetoast'
 import { fetchConfig, updateConfig } from '@/api/client'
+import { errorMessage } from '@/utils/apiError'
 import type { AppConfig } from '@/types'
 
 const visible = defineModel<boolean>('visible', { default: false })
@@ -86,13 +86,6 @@ const form = reactive<AppConfig>({
   bob_api_key: '',
 })
 
-const visibleModel = computed({
-  get: () => visible.value,
-  set: (value: boolean) => {
-    visible.value = value
-  },
-})
-
 function applyForm(data: AppConfig) {
   form.organization = data.organization || ''
   form.project = data.project || ''
@@ -101,20 +94,13 @@ function applyForm(data: AppConfig) {
   form.bob_api_key = data.bob_api_key || ''
 }
 
-function apiError(err: unknown): string {
-  if (axios.isAxiosError(err) && err.response?.data?.error) {
-    return String(err.response.data.error)
-  }
-  return String(err)
-}
-
 async function loadConfig() {
   loading.value = true
   error.value = ''
   try {
     applyForm(await fetchConfig())
   } catch (err) {
-    error.value = `載入失敗：${apiError(err)}`
+    error.value = `載入失敗：${errorMessage(err)}`
   } finally {
     loading.value = false
   }
@@ -126,10 +112,10 @@ async function handleSave() {
   try {
     applyForm(await updateConfig({ ...form }))
     toast.add({ severity: 'success', summary: '已儲存設定', life: 3000 })
-    visibleModel.value = false
+    visible.value = false
     emit('saved')
   } catch (err) {
-    error.value = apiError(err)
+    error.value = errorMessage(err)
   } finally {
     saving.value = false
   }

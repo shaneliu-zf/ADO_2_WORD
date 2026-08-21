@@ -32,7 +32,11 @@ fetch → group → report_by_llm → word
 | fetch | `backend.pipeline.fetch` | `backend/output/ado/` |
 | group | `backend.pipeline.group` | 分組 |
 | report_by_llm | `backend.pipeline.report_by_llm` | `backend/output/json/`（用 Bob） |
-| word | `backend.pipeline.word` | `backend/output/report_*.docx` |
+| word | `backend.pipeline.word` | 網頁：選位置儲存後刪暫存；CLI：`backend/output/report_*.docx` |
+
+Word 套件：`oxml.py`（XML／儲存格）、`blocks.py`（填 meta／測項／附件／Commit）、`toc.py`（目錄）。
+
+報告 JSON 契約在 `backend.utils.report_schema`。Bob 寫入與畫面「儲存」都會驗證。
 
 Prompt：`backend/templates/llm_prompt.txt`。
 

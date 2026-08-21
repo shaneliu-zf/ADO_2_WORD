@@ -1,15 +1,17 @@
 <template>
   <Dialog
-    v-model:visible="visibleModel"
+    v-model:visible="visible"
     :header="dialogHeader"
-    :style="{ width: '80vw', maxWidth: '1000px' }"
+    class="ado-detail-dialog"
+    :class="{ 'ado-detail-dialog--ado': mode === 'ado' }"
+    :style="dialogStyle"
     :baseZIndex="2000"
-    :contentStyle="{ height: 'calc(85vh - 6rem)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }"
+    :contentStyle="contentStyle"
     modal
     dismissableMask
     @hide="onClose"
   >
-    <div v-if="mode === 'ado'" class="tab-content ado-mode">
+    <div v-if="mode === 'ado'" class="ado-shell">
       <div class="tab-toolbar">
         <Button
           label="從 ADO 更新"
@@ -29,7 +31,9 @@
         <i class="pi pi-exclamation-triangle" />
         {{ loadError }}
       </div>
-      <HtmlPreview v-else-if="htmlContent" :html="htmlContent" class="html-preview" />
+      <div v-else-if="htmlContent" class="ado-preview-slot">
+        <HtmlPreview :html="htmlContent" />
+      </div>
       <div v-else class="state-msg">無 HTML 資料</div>
     </div>
 
@@ -88,29 +92,46 @@ import { fetchItemJson, fetchItemHtml, updateItem, refreshWorkItem, regenerateRe
 import { useItemsStore } from '@/stores/items'
 import { usePipelineStore } from '@/stores/pipeline'
 import { useConfirm } from 'primevue/useconfirm'
+import { errorMessage } from '@/utils/apiError'
 import type { AdoItem, Report } from '@/types'
 
+const visible = defineModel<boolean>('visible', { default: false })
 const props = defineProps<{
-  visible: boolean
   item: AdoItem | null
   mode: 'ado' | 'report'
-}>()
-
-const emit = defineEmits<{
-  'update:visible': [v: boolean]
 }>()
 
 const pipelineStore = usePipelineStore()
 const itemsStore = useItemsStore()
 
-const visibleModel = computed({
-  get: () => props.visible,
-  set: (v) => emit('update:visible', v),
-})
-
 const itemId = computed(() => props.item?.id ?? 0)
 const dialogHeader = computed(() =>
   props.mode === 'ado' ? `ADO #${itemId.value} 原文` : `ADO #${itemId.value} 報告`,
+)
+
+const dialogStyle = computed(() =>
+  props.mode === 'ado'
+    ? { width: '80vw', maxWidth: '1000px', height: '90vh', maxHeight: '90vh' }
+    : { width: '80vw', maxWidth: '1000px' },
+)
+
+const contentStyle = computed(() =>
+  props.mode === 'ado'
+    ? {
+        flex: '1 1 auto',
+        minHeight: '0',
+        height: '0',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column' as const,
+        paddingBottom: '1rem',
+      }
+    : {
+        maxHeight: 'calc(85vh - 6rem)',
+        overflowY: 'auto' as const,
+        display: 'flex',
+        flexDirection: 'column' as const,
+      },
 )
 
 const toast = useToast()
@@ -139,16 +160,16 @@ async function load(id: number) {
       report.value = await fetchItemJson(id)
     }
   } catch (err) {
-    loadError.value = `載入失敗：${String(err)}`
+    loadError.value = `載入失敗：${errorMessage(err)}`
   } finally {
     loading.value = false
   }
 }
 
 watch(
-  () => [props.visible, props.item?.id, props.mode] as const,
-  ([visible, id]) => {
-    if (visible && id != null) void load(id)
+  () => [visible.value, props.item?.id, props.mode] as const,
+  ([isVisible, id]) => {
+    if (isVisible && id != null) void load(id)
   },
   { immediate: true },
 )
@@ -164,9 +185,7 @@ async function refreshAdo() {
   try {
     await refreshWorkItem(itemId.value)
     htmlContent.value = await fetchItemHtml(itemId.value)
-    const selected = [...itemsStore.selectedIds]
     await itemsStore.refresh()
-    itemsStore.setSelectedIds(selected.filter(id => itemsStore.items.some(item => item.id === id)))
     toast.add({
       severity: 'success',
       summary: '已更新',
@@ -174,7 +193,7 @@ async function refreshAdo() {
       life: 3000,
     })
   } catch (err) {
-    toast.add({ severity: 'error', summary: '更新失敗', detail: String(err), life: 4000 })
+    toast.add({ severity: 'error', summary: '更新失敗', detail: errorMessage(err), life: 4000 })
   } finally {
     refreshing.value = false
   }
@@ -203,9 +222,7 @@ async function regenerate() {
   regenerating.value = true
   try {
     report.value = await regenerateReport(itemId.value)
-    const selected = [...itemsStore.selectedIds]
     await itemsStore.refresh()
-    itemsStore.setSelectedIds(selected.filter(id => itemsStore.items.some(item => item.id === id)))
     toast.add({
       severity: 'success',
       summary: '已重新生成',
@@ -213,7 +230,7 @@ async function regenerate() {
       life: 3000,
     })
   } catch (err) {
-    toast.add({ severity: 'error', summary: '重新生成失敗', detail: String(err), life: 5000 })
+    toast.add({ severity: 'error', summary: '重新生成失敗', detail: errorMessage(err), life: 5000 })
   } finally {
     regenerating.value = false
   }
@@ -234,7 +251,7 @@ async function handleSave(updated?: Report) {
     editing.value = false
     toast.add({ severity: 'success', summary: '儲存成功', detail: `ADO #${itemId.value} 已更新`, life: 3000 })
   } catch (err) {
-    toast.add({ severity: 'error', summary: '儲存失敗', detail: String(err), life: 4000 })
+    toast.add({ severity: 'error', summary: '儲存失敗', detail: errorMessage(err), life: 4000 })
   } finally {
     saving.value = false
   }
@@ -250,9 +267,13 @@ async function handleSave(updated?: Report) {
   font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
 }
 
-/* ADO 原文模式：撐滿 dialog 高度，overflow 交給 iframe */
-.tab-content.ado-mode {
+.ado-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   height: 100%;
+  gap: 0.75rem;
   overflow: hidden;
 }
 
@@ -263,13 +284,24 @@ async function handleSave(updated?: Report) {
   flex-shrink: 0;
 }
 
-.html-preview {
-  flex: 1;
+.ado-preview-slot {
+  position: relative;
+  flex: 1 1 auto;
   min-height: 0;
-  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #fff;
 }
 
-/* ── State messages ─────────────────────────────────────────────────────────── */
+.ado-preview-slot :deep(iframe) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
 .state-msg {
   display: flex;
   align-items: center;
@@ -281,5 +313,31 @@ async function handleSave(updated?: Report) {
 
 .state-msg.error {
   color: var(--p-red-500);
+}
+</style>
+
+<!-- Dialog 本體不在 scoped 根上，用全域 class 強制 flex 填滿 -->
+<style>
+.ado-detail-dialog.p-dialog {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.ado-detail-dialog.ado-detail-dialog--ado {
+  height: 90vh !important;
+  max-height: 90vh !important;
+}
+
+.ado-detail-dialog .p-dialog-header {
+  flex-shrink: 0;
+}
+
+.ado-detail-dialog.ado-detail-dialog--ado .p-dialog-content {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 </style>

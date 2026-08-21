@@ -7,16 +7,23 @@
             label="載入 ID"
             icon="pi pi-download"
             outlined
-            :loading="importing || listing"
-            :disabled="pipelineStore.isRunning && !importing && !listing"
-            @click="openImportDialog"
+            :disabled="pipelineStore.isRunning"
+            @click="importVisible = true"
+          />
+          <Button
+            label="只留下勾選項目"
+            icon="pi pi-filter"
+            outlined
+            :disabled="!canKeepOnlySelected"
+            :loading="keeping"
+            @click="confirmKeepOnly"
           />
           <Button
             label="刪除"
             icon="pi pi-trash"
             outlined
             severity="danger"
-            :disabled="itemsStore.selectedIds.size === 0"
+            :disabled="itemsStore.selectedIds.size === 0 || pipelineStore.isRunning"
             :loading="deleting"
             @click="confirmDelete"
           />
@@ -63,51 +70,15 @@
       :mode="detailMode"
     />
     <ConfigDialog v-model:visible="configVisible" :required="configMissing" @saved="onConfigSaved" />
-    <Dialog
-      v-model:visible="importVisible"
-      header="載入 ID"
-      modal
-      :style="{ width: '36rem' }"
-      @show="fillImportFromCurrent"
-    >
-      <p class="import-lead">會透過輸入的 ID 去 ADO 撈取 Type、State、Title。</p>
-      <p class="import-hint">可貼上 ID，例如 841, 842, 845；或按「填入全部 ID」取得全部 ID。</p>
-      <Textarea
-        v-model="importText"
-        class="import-box"
-        rows="6"
-        autoResize
-      />
-      <p v-if="importError" class="error-msg">{{ importError }}</p>
-      <template #footer>
-        <Button label="取消" outlined severity="secondary" @click="importVisible = false" />
-        <Button
-          label="填入全部 ID"
-          icon="pi pi-list"
-          outlined
-          :loading="listing"
-          :disabled="pipelineStore.isRunning && !listing"
-          @click="fillIdsFromAdo"
-        />
-        <Button
-          label="載入"
-          icon="pi pi-download"
-          :loading="importing"
-          :disabled="pipelineStore.isRunning && !importing"
-          @click="importIds"
-        />
-      </template>
-    </Dialog>
+    <ImportIdsDialog v-model:visible="importVisible" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
-import Dialog from 'primevue/dialog'
 import ProgressSpinner from 'primevue/progressspinner'
-import Textarea from 'primevue/textarea'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 import AdoTable from '@/components/AdoTable.vue'
@@ -115,9 +86,11 @@ import PipelinePanel from '@/components/PipelinePanel.vue'
 import LogPanel from '@/components/LogPanel.vue'
 import AdoDetailDialog from '@/components/AdoDetailDialog.vue'
 import ConfigDialog from '@/components/ConfigDialog.vue'
+import ImportIdsDialog from '@/components/ImportIdsDialog.vue'
 import { useItemsStore } from '@/stores/items'
 import { usePipelineStore } from '@/stores/pipeline'
-import { fetchAdoIds, fetchConfigStatus, loadItemSummaries } from '@/api/client'
+import { fetchConfigStatus, updateSession } from '@/api/client'
+import { errorMessage } from '@/utils/apiError'
 import type { AdoItem } from '@/types'
 
 const itemsStore = useItemsStore()
@@ -126,99 +99,31 @@ const router = useRouter()
 const toast = useToast()
 const confirm = useConfirm()
 const loading = ref(false)
-const listing = ref(false)
 const loadError = ref('')
 const deleting = ref(false)
+const keeping = ref(false)
 const detailVisible = ref(false)
 const detailItem = ref<AdoItem | null>(null)
 const detailMode = ref<'ado' | 'report'>('ado')
 const configVisible = ref(false)
 const configMissing = ref(false)
 const importVisible = ref(false)
-const importText = ref('')
-const importError = ref('')
-const importing = ref(false)
 
-function currentIdText(): string {
-  return itemsStore.items.map(item => item.id).join(', ')
-}
-
-function fillImportFromCurrent() {
-  importError.value = ''
-  importText.value = currentIdText()
-}
-
-function openImportDialog() {
-  importVisible.value = true
-}
-
-function parseImportIds(text: string): number[] {
-  const ids: number[] = []
-  const seen = new Set<number>()
-  for (const match of text.matchAll(/\d+/g)) {
-    const id = Number(match[0])
-    if (!id || seen.has(id)) continue
-    seen.add(id)
-    ids.push(id)
-  }
-  return ids
-}
-
-async function importIds() {
-  importError.value = ''
-  const ids = parseImportIds(importText.value)
-  if (!ids.length) {
-    importError.value = '請貼上至少一個 ID'
-    return
-  }
-  if (pipelineStore.isRunning) return
-  importing.value = true
-  try {
-    const result = await loadItemSummaries(ids)
-    await pipelineStore.resetToStart()
-    await itemsStore.refresh()
-    toast.add({
-      severity: 'success',
-      summary: '已載入 ID',
-      detail: `共 ${result.count} 筆`,
-      life: 4000,
-    })
-    importVisible.value = false
-  } catch (err) {
-    importError.value = `載入失敗：${String(err)}`
-  } finally {
-    importing.value = false
-  }
-}
-
-async function fillIdsFromAdo() {
-  if (pipelineStore.isRunning) return
-  listing.value = true
-  importError.value = ''
-  try {
-    const ids = await fetchAdoIds()
-    importText.value = ids.join(', ')
-    toast.add({
-      severity: 'success',
-      summary: '已填入 ID',
-      detail: `共 ${ids.length} 筆，請再按載入`,
-      life: 3000,
-    })
-  } catch (err) {
-    importError.value = `列出 ID 失敗：${String(err)}`
-  } finally {
-    listing.value = false
-  }
-}
+const canKeepOnlySelected = computed(() => {
+  if (pipelineStore.isRunning) return false
+  const selected = itemsStore.selectedIds.size
+  if (!selected) return false
+  return selected < itemsStore.items.length
+})
 
 async function refresh() {
   loading.value = true
   loadError.value = ''
   try {
-    await pipelineStore.resetToStart()
-    await itemsStore.refresh()
+    const session = await pipelineStore.loadSession()
+    await itemsStore.refresh({ restoreSelected: session.selectedIds ?? [] })
   } catch (err) {
-    loadError.value = `載入失敗：${String(err)}`
+    loadError.value = `載入失敗：${errorMessage(err)}`
   } finally {
     loading.value = false
   }
@@ -245,7 +150,7 @@ function onConfigSaved() {
 }
 
 function promptIfEmpty() {
-  if (itemsStore.items.length > 0 || listing.value || pipelineStore.isRunning) return
+  if (itemsStore.items.length > 0 || pipelineStore.isRunning) return
   confirm.require({
     header: '目前沒有資料',
     message: '發現目前沒有資料，是否需要從 ADO 取得 ID 跟 Title',
@@ -256,6 +161,42 @@ function promptIfEmpty() {
       importVisible.value = true
     },
   })
+}
+
+function confirmKeepOnly() {
+  const ids = [...itemsStore.selectedIds]
+  if (!ids.length) return
+  const drop = itemsStore.items.length - ids.length
+  confirm.require({
+    header: '只留下勾選項目',
+    message: `清單將只保留勾選的 ${ids.length} 筆，其餘 ${drop} 筆會從目前清單移除（本機檔案不會刪除）。確定嗎？`,
+    icon: 'pi pi-filter',
+    rejectProps: { label: '取消', severity: 'secondary', outlined: true },
+    acceptProps: { label: '只留下勾選' },
+    accept: () => {
+      void handleKeepOnly()
+    },
+  })
+}
+
+async function handleKeepOnly() {
+  const ids = [...itemsStore.selectedIds]
+  if (!ids.length) return
+  keeping.value = true
+  try {
+    await updateSession({ ids, selectedIds: ids })
+    await itemsStore.refresh({ selectAll: true })
+    toast.add({
+      severity: 'success',
+      summary: '已更新清單',
+      detail: `目前留下 ${ids.length} 筆`,
+      life: 3000,
+    })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: '更新失敗', detail: errorMessage(err), life: 4000 })
+  } finally {
+    keeping.value = false
+  }
 }
 
 function confirmDelete() {
@@ -279,7 +220,7 @@ async function handleDelete(ids: number[]) {
     await itemsStore.removeItems(ids)
     toast.add({ severity: 'success', summary: '刪除成功', detail: `已刪除 ${ids.length} 筆`, life: 3000 })
   } catch (err) {
-    toast.add({ severity: 'error', summary: '刪除失敗', detail: String(err), life: 4000 })
+    toast.add({ severity: 'error', summary: '刪除失敗', detail: errorMessage(err), life: 4000 })
   } finally {
     deleting.value = false
   }
@@ -315,20 +256,6 @@ onMounted(refresh)
 
 .settings-btn {
   margin-left: auto;
-}
-
-.import-lead {
-  margin: 0 0 0.35rem;
-  line-height: 1.5;
-}
-
-.import-hint {
-  margin: 0 0 0.5rem;
-  color: var(--p-text-muted-color, #6b7280);
-}
-
-.import-box {
-  width: 100%;
 }
 
 .content-row {

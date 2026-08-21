@@ -14,12 +14,6 @@ const router = createRouter({
       name: 'dashboard',
       component: () => import('@/views/DashboardView.vue'),
     },
-    {
-      path: '/items/:id',
-      name: 'detail',
-      component: () => import('@/views/DetailView.vue'),
-      props: route => ({ id: Number(route.params.id) }),
-    },
   ],
 })
 

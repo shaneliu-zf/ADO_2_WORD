@@ -56,6 +56,7 @@ export interface AppConfig {
 export interface PipelineSession {
   ids: number[]
   listedIds: number[]
+  selectedIds: number[]
   currentStep: number
   reachedStep: number
 }
@@ -76,14 +77,6 @@ export interface CommitEntry {
   ado_id?: number
 }
 
-export interface ChangeEntry {
-  date: string
-  by: string
-  field: string
-  old: string
-  new: string
-}
-
 export interface Report {
   ado_id: number
   ado_ids: number[]
@@ -97,6 +90,5 @@ export interface Report {
   reviewer: string
   test_items: TestItem[]
   test_steps: TestStep[]
-  change_history?: ChangeEntry[]
   commits?: CommitEntry[]
 }

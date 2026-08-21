@@ -26,6 +26,7 @@
           :modelValue="allChecked"
           :indeterminate="someChecked && !allChecked"
           binary
+          :disabled="selectionLocked"
           @update:modelValue="toggleAll"
         />
       </template>
@@ -34,6 +35,7 @@
         <Checkbox
           :modelValue="isGroupChecked(data)"
           binary
+          :disabled="selectionLocked"
           @update:modelValue="(v: boolean) => toggleGroup(data, v)"
         />
       </template>
@@ -185,6 +187,7 @@ import Tag from 'primevue/tag'
 import InputText from 'primevue/inputtext'
 import MultiSelect from 'primevue/multiselect'
 import { useItemsStore } from '@/stores/items'
+import { usePipelineStore } from '@/stores/pipeline'
 import type { AdoTableRow } from '@/types'
 
 const emit = defineEmits<{
@@ -192,6 +195,8 @@ const emit = defineEmits<{
 }>()
 
 const itemsStore = useItemsStore()
+const pipelineStore = usePipelineStore()
+const selectionLocked = computed(() => pipelineStore.isRunning)
 
 // 排序狀態
 const sortField = ref<string>('groupKey')
@@ -233,6 +238,7 @@ const someChecked = computed(() =>
 
 /** 勾選 / 取消某列代表的整組 */
 function toggleGroup(data: AdoTableRow, checked: boolean) {
+  if (selectionLocked.value) return
   const ids = groupIdsFor(data)
   const next = new Set(itemsStore.selectedIds)
   for (const id of ids) {
@@ -242,13 +248,16 @@ function toggleGroup(data: AdoTableRow, checked: boolean) {
   itemsStore.setSelectedIds([...next])
 }
 
-/** 表頭全選 / 取消全選（對所有可見列操作） */
+/** 表頭全選 / 取消全選：只動目前可見列，不影響篩選外已勾選 */
 function toggleAll(checked: boolean) {
-  if (checked) {
-    itemsStore.setSelectedIds(itemsStore.tableRows.map(r => r.id))
-  } else {
-    itemsStore.setSelectedIds([])
+  if (selectionLocked.value) return
+  const visibleIds = itemsStore.tableRows.map(r => r.id)
+  const next = new Set(itemsStore.selectedIds)
+  for (const id of visibleIds) {
+    if (checked) next.add(id)
+    else next.delete(id)
   }
+  itemsStore.setSelectedIds([...next])
 }
 
 const fetchedOptions = [
@@ -336,13 +345,6 @@ function stateSeverity(state: string): 'success' | 'info' | 'warn' | 'danger' | 
 
 .w-full {
   width: 100%;
-}
-
-.status-icon {
-  font-size: 0.95rem;
-}
-.status-icon.done {
-  color: var(--p-green-500, #22c55e);
 }
 
 .group-cell {

@@ -138,9 +138,12 @@ def fetch_git_commit(
     authorization: str,
     repository_id: str,
     commit_id: str,
+    *,
+    project: str | None = None,
 ) -> dict[str, Any]:
+    git_config = config if not project else {**config, "project": project}
     url = api_url(
-        config,
+        git_config,
         "git/repositories",
         repository_id,
         "commits",

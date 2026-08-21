@@ -56,223 +56,65 @@
       <div class="charts">
         <section class="panel">
           <h2>Work Item 類型</h2>
-          <div class="chart-row">
-            <svg viewBox="0 0 42 42" class="donut">
-              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="var(--p-surface-200)" stroke-width="6" />
-              <circle
-                v-for="ring in typeRings"
-                :key="ring.label"
-                cx="21" cy="21" r="15.915"
-                fill="transparent"
-                :stroke="ring.color"
-                stroke-width="6"
-                :stroke-dasharray="ring.dash"
-                :stroke-dashoffset="ring.offset"
-                class="donut-slice"
-                @click="openList('type', ring.label, ring.label)"
-              />
-              <text x="21" y="22.5" text-anchor="middle" class="donut-total">{{ items.length }}</text>
-            </svg>
-            <ul class="legend">
-              <li v-for="s in typeSlices" :key="s.label">
-                <button type="button" @click="openList('type', s.label, s.label)">
-                  <i :style="{ background: s.color }" />{{ s.label }}<b>{{ s.value }}</b>
-                </button>
-              </li>
-            </ul>
-          </div>
+          <DonutChart :slices="typeSlices" :total="items.length" @select="s => openList('type', s.label, s.label)" />
         </section>
 
         <section class="panel">
           <h2>有沒有 Redmine</h2>
-          <div class="chart-row">
-            <svg viewBox="0 0 42 42" class="donut">
-              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="var(--p-surface-200)" stroke-width="6" />
-              <circle
-                v-for="ring in redmineRings"
-                :key="ring.label"
-                cx="21" cy="21" r="15.915"
-                fill="transparent"
-                :stroke="ring.color"
-                stroke-width="6"
-                :stroke-dasharray="ring.dash"
-                :stroke-dashoffset="ring.offset"
-                class="donut-slice"
-                @click="openList('redmine', ring.key, ring.label)"
-              />
-              <text x="21" y="22.5" text-anchor="middle" class="donut-total">{{ items.length }}</text>
-            </svg>
-            <ul class="legend">
-              <li v-for="s in redmineSlices" :key="s.label">
-                <button type="button" @click="openList('redmine', s.key, s.label)">
-                  <i :style="{ background: s.color }" />{{ s.label }}<b>{{ s.value }}</b>
-                </button>
-              </li>
-            </ul>
-          </div>
+          <DonutChart
+            :slices="redmineSlices"
+            :total="items.length"
+            @select="s => openList('redmine', s.key ?? s.label, s.label)"
+          />
         </section>
 
         <section class="panel">
           <h2>狀態分布</h2>
-          <div class="chart-row">
-            <svg viewBox="0 0 42 42" class="donut">
-              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="var(--p-surface-200)" stroke-width="6" />
-              <circle
-                v-for="ring in stateRings"
-                :key="ring.label"
-                cx="21" cy="21" r="15.915"
-                fill="transparent"
-                :stroke="ring.color"
-                stroke-width="6"
-                :stroke-dasharray="ring.dash"
-                :stroke-dashoffset="ring.offset"
-                class="donut-slice"
-                @click="openList('state', ring.label, ring.label)"
-              />
-              <text x="21" y="22.5" text-anchor="middle" class="donut-total">{{ items.length }}</text>
-            </svg>
-            <ul class="legend">
-              <li v-for="s in stateSlices" :key="s.label">
-                <button type="button" @click="openList('state', s.label, s.label)">
-                  <i :style="{ background: s.color }" />{{ s.label }}<b>{{ s.value }}</b>
-                </button>
-              </li>
-            </ul>
-          </div>
+          <DonutChart :slices="stateSlices" :total="items.length" @select="s => openList('state', s.label, s.label)" />
         </section>
 
         <section v-if="fetchedN" class="panel">
           <h2>Category</h2>
-          <div class="chart-row">
-            <svg viewBox="0 0 42 42" class="donut">
-              <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="var(--p-surface-200)" stroke-width="6" />
-              <circle
-                v-for="ring in categoryRings"
-                :key="ring.label"
-                cx="21" cy="21" r="15.915"
-                fill="transparent"
-                :stroke="ring.color"
-                stroke-width="6"
-                :stroke-dasharray="ring.dash"
-                :stroke-dashoffset="ring.offset"
-                class="donut-slice"
-                @click="openList('category', ring.label, ring.label)"
-              />
-              <text x="21" y="22.5" text-anchor="middle" class="donut-total">{{ fetchedN }}</text>
-            </svg>
-            <ul class="legend">
-              <li v-for="s in categorySlices" :key="s.label">
-                <button type="button" @click="openList('category', s.label, s.label)">
-                  <i :style="{ background: s.color }" />{{ s.label }}<b>{{ s.value }}</b>
-                </button>
-              </li>
-            </ul>
-          </div>
+          <DonutChart
+            :slices="categorySlices"
+            :total="fetchedN"
+            @select="s => openList('category', s.label, s.label)"
+          />
         </section>
 
         <section v-if="fetchedN" class="panel wide">
           <h2>建立月份</h2>
-          <ul class="bars">
-            <li v-for="row in monthRows" :key="row.label">
-              <button type="button" class="bar-row" @click="openList('month', row.label, row.label)">
-                <span class="bar-label">{{ row.label }}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" :style="{ width: barWidth(row.value, monthRows) }" />
-                </span>
-                <span class="bar-n">{{ row.value }} 張</span>
-              </button>
-            </li>
-          </ul>
+          <BarList :rows="monthRows" @select="row => openList('month', row.label, row.label)" />
         </section>
 
         <section v-if="fetchedN" class="panel wide">
           <h2>指派人</h2>
-          <ul class="bars">
-            <li v-for="row in assigneeRows" :key="row.label">
-              <button type="button" class="bar-row" @click="openList('assignee', row.label, row.label)">
-                <span class="bar-label">{{ row.label }}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" :style="{ width: barWidth(row.value, assigneeRows) }" />
-                </span>
-                <span class="bar-n">{{ row.value }} 張</span>
-              </button>
-            </li>
-          </ul>
+          <BarList :rows="assigneeRows" @select="row => openList('assignee', row.label, row.label)" />
         </section>
 
         <section v-if="fetchedN" class="panel wide">
           <h2>創建者</h2>
-          <ul class="bars">
-            <li v-for="row in createdByRows" :key="row.label">
-              <button type="button" class="bar-row" @click="openList('createdBy', row.label, `創建者：${row.label}`)">
-                <span class="bar-label">{{ row.label }}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" :style="{ width: barWidth(row.value, createdByRows) }" />
-                </span>
-                <span class="bar-n">{{ row.value }} 張</span>
-              </button>
-            </li>
-          </ul>
+          <BarList :rows="createdByRows" @select="row => openList('createdBy', row.label, `創建者：${row.label}`)" />
         </section>
 
         <section v-if="fetchedN" class="panel wide">
           <h2>SA</h2>
-          <ul class="bars">
-            <li v-for="row in saRows" :key="row.label">
-              <button type="button" class="bar-row" @click="openList('sa', row.label, `SA：${row.label}`)">
-                <span class="bar-label">{{ row.label }}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" :style="{ width: barWidth(row.value, saRows) }" />
-                </span>
-                <span class="bar-n">{{ row.value }} 張</span>
-              </button>
-            </li>
-          </ul>
+          <BarList :rows="saRows" @select="row => openList('sa', row.label, `SA：${row.label}`)" />
         </section>
 
         <section v-if="fetchedN" class="panel wide">
           <h2>工程師</h2>
-          <ul class="bars">
-            <li v-for="row in engineerRows" :key="row.label">
-              <button type="button" class="bar-row" @click="openList('engineer', row.label, `工程師：${row.label}`)">
-                <span class="bar-label">{{ row.label }}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" :style="{ width: barWidth(row.value, engineerRows) }" />
-                </span>
-                <span class="bar-n">{{ row.value }} 張</span>
-              </button>
-            </li>
-          </ul>
+          <BarList :rows="engineerRows" @select="row => openList('engineer', row.label, `工程師：${row.label}`)" />
         </section>
 
         <section v-if="fetchedN" class="panel wide">
           <h2>測試人員</h2>
-          <ul class="bars">
-            <li v-for="row in testerRows" :key="row.label">
-              <button type="button" class="bar-row" @click="openList('tester', row.label, `測試人員：${row.label}`)">
-                <span class="bar-label">{{ row.label }}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" :style="{ width: barWidth(row.value, testerRows) }" />
-                </span>
-                <span class="bar-n">{{ row.value }} 張</span>
-              </button>
-            </li>
-          </ul>
+          <BarList :rows="testerRows" @select="row => openList('tester', row.label, `測試人員：${row.label}`)" />
         </section>
 
         <section class="panel wide">
           <h2>標題模組</h2>
-          <ul class="bars">
-            <li v-for="row in moduleRows" :key="row.label">
-              <button type="button" class="bar-row" @click="openList('module', row.label, row.label)">
-                <span class="bar-label">{{ row.label }}</span>
-                <span class="bar-track">
-                  <span class="bar-fill" :style="{ width: barWidth(row.value, moduleRows) }" />
-                </span>
-                <span class="bar-n">{{ row.value }} 張</span>
-              </button>
-            </li>
-          </ul>
+          <BarList :rows="moduleRows" @select="row => openList('module', row.label, row.label)" />
         </section>
       </div>
     </template>
@@ -316,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
@@ -326,40 +168,11 @@ import ProgressSpinner from 'primevue/progressspinner'
 import { useToast } from 'primevue/usetoast'
 import { useItemsStore } from '@/stores/items'
 import AdoDetailDialog from '@/components/AdoDetailDialog.vue'
+import DonutChart from '@/components/charts/DonutChart.vue'
+import BarList from '@/components/charts/BarList.vue'
+import { categoryLabel, shortName, useDashboardStats } from '@/composables/useDashboardStats'
+import { errorMessage } from '@/utils/apiError'
 import type { AdoItem } from '@/types'
-
-type Slice = { label: string; value: number; color: string; key?: string }
-type CountRow = { label: string; value: number }
-
-const CLOSED = new Set(['Done', 'Cancel'])
-const TYPE_COLORS: Record<string, string> = {
-  Issue: 'var(--p-blue-500)',
-  Task: 'var(--p-teal-500)',
-}
-const STATE_COLORS: Record<string, string> = {
-  Done: 'var(--p-green-500)',
-  Cancel: 'var(--p-surface-400)',
-  'To Do': 'var(--p-orange-500)',
-  Analyze: 'var(--p-amber-500)',
-  Testing: 'var(--p-cyan-500)',
-  Develop: 'var(--p-indigo-400)',
-  Review: 'var(--p-purple-400)',
-}
-const CATEGORY_COLORS: Record<string, string> = {
-  Bug: 'var(--p-red-400)',
-  Data: 'var(--p-blue-500)',
-  Enhance: 'var(--p-green-500)',
-  CR: 'var(--p-purple-400)',
-  Performance: 'var(--p-orange-500)',
-}
-const PALETTE = [
-  'var(--p-blue-500)',
-  'var(--p-teal-500)',
-  'var(--p-orange-500)',
-  'var(--p-green-500)',
-  'var(--p-purple-400)',
-  'var(--p-cyan-600)',
-]
 
 const router = useRouter()
 const toast = useToast()
@@ -371,135 +184,28 @@ const listTitle = ref('')
 const listRows = ref<AdoItem[]>([])
 const detailVisible = ref(false)
 const detailItem = ref<AdoItem | null>(null)
-const items = computed(() => itemsStore.items)
-const fetchedItems = computed(() => items.value.filter(i => i.fetched))
-const fetchedN = computed(() => fetchedItems.value.length)
 
-function moduleOf(title: string): string {
-  const match = /^\[([^\]]+)\]/.exec(title || '')
-  if (!match) return '無標記'
-  const raw = match[1].trim()
-  if (/^line changeover/i.test(raw)) return 'Line Changeover'
-  return raw
-}
-
-function shortName(name: string): string {
-  if (!name) return ''
-  if (name === 'Shihan Chen WYMTN Wiwynn') return 'Shihan Chen'
-  if (name === 'Justin TY Huang WYMTN Wiwynn') return 'Justin Huang'
-  if (name.includes('@')) return name.split('@')[0]
-  return name
-}
-
-function categoryLabel(name: string): string {
-  return (name || '').trim() || '無標記'
-}
-
-function personLabel(name: string): string {
-  return shortName(name) || '無標記'
-}
-
-function yearMonth(value: unknown): string {
-  if (value == null || value === '') return ''
-  const text = value instanceof Date ? value.toISOString() : String(value)
-  const match = /(\d{4}-\d{2})/.exec(text)
-  return match?.[1] ?? ''
-}
-
-function countMap(values: string[]): CountRow[] {
-  const map = new Map<string, number>()
-  for (const value of values) map.set(value, (map.get(value) || 0) + 1)
-  return [...map.entries()]
-    .map(([label, value]) => ({ label, value }))
-    .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label))
-}
-
-function toRings(slices: Slice[]) {
-  const total = slices.reduce((sum, s) => sum + s.value, 0)
-  let offset = 25
-  return slices.map(slice => {
-    const pct = total ? (slice.value / total) * 100 : 0
-    const ring = { ...slice, dash: `${pct} ${100 - pct}`, offset }
-    offset -= pct
-    return ring
-  })
-}
-
-function barWidth(value: number, rows: CountRow[]): string {
-  const max = Math.max(1, ...rows.map(r => r.value))
-  return `${(value / max) * 100}%`
-}
-
-const issueN = computed(() => items.value.filter(i => i.workItemType === 'Issue').length)
-const taskN = computed(() => items.value.filter(i => i.workItemType === 'Task').length)
-const hasRm = computed(() => items.value.filter(i => Boolean(i.redmineId)).length)
-const noRm = computed(() => items.value.length - hasRm.value)
-const openN = computed(() => items.value.filter(i => !CLOSED.has(i.state)).length)
-
-const typeSlices = computed<Slice[]>(() =>
-  countMap(items.value.map(i => i.workItemType || '無標記')).map((row, index) => ({
-    label: row.label,
-    value: row.value,
-    color: TYPE_COLORS[row.label] || PALETTE[index % PALETTE.length],
-  })),
-)
-const redmineSlices = computed<Slice[]>(() =>
-  [
-    { label: '無 Redmine', value: noRm.value, color: 'var(--p-orange-500)', key: 'no' },
-    { label: '有 Redmine', value: hasRm.value, color: 'var(--p-green-500)', key: 'yes' },
-  ].filter(s => s.value > 0),
-)
-const stateSlices = computed<Slice[]>(() =>
-  countMap(items.value.map(i => i.state || '無標記')).map((row, index) => ({
-    label: row.label,
-    value: row.value,
-    color: STATE_COLORS[row.label] || PALETTE[index % PALETTE.length],
-  })),
-)
-const typeRings = computed(() => toRings(typeSlices.value))
-const redmineRings = computed(() => toRings(redmineSlices.value))
-const stateRings = computed(() => toRings(stateSlices.value))
-const categorySlices = computed<Slice[]>(() =>
-  countMap(fetchedItems.value.map(i => categoryLabel(i.category))).map((row, index) => ({
-    label: row.label,
-    value: row.value,
-    color: CATEGORY_COLORS[row.label] || PALETTE[index % PALETTE.length],
-  })),
-)
-const categoryRings = computed(() => toRings(categorySlices.value))
-const monthRows = computed(() =>
-  countMap(fetchedItems.value.map(i => yearMonth(i.createdDate) || '無標記')).sort((a, b) =>
-    a.label.localeCompare(b.label),
-  ),
-)
-const assigneeRows = computed(() => countMap(fetchedItems.value.map(i => personLabel(i.assignedTo))))
-const createdByRows = computed(() => countMap(fetchedItems.value.map(i => personLabel(i.createdBy))))
-const saRows = computed(() => countMap(fetchedItems.value.map(i => personLabel(i.saBy))))
-const engineerRows = computed(() => countMap(fetchedItems.value.map(i => personLabel(i.engineerBy))))
-const testerRows = computed(() => countMap(fetchedItems.value.map(i => personLabel(i.testerBy))))
-const moduleRows = computed(() => countMap(items.value.map(i => moduleOf(i.title))).slice(0, 10))
-
-function rowsFor(kind: string, key: string): AdoItem[] {
-  return items.value
-    .filter(item => {
-      if (kind === 'fetched') return item.fetched
-      if (kind === 'unfetched') return !item.fetched
-      if (kind === 'type') return (item.workItemType || '無標記') === key
-      if (kind === 'redmine') return key === 'yes' ? Boolean(item.redmineId) : !item.redmineId
-      if (kind === 'state') return (item.state || '無標記') === key
-      if (kind === 'open') return !CLOSED.has(item.state)
-      if (kind === 'month') return yearMonth(item.createdDate) === key || (!yearMonth(item.createdDate) && key === '無標記')
-      if (kind === 'assignee') return personLabel(item.assignedTo) === key
-      if (kind === 'createdBy') return personLabel(item.createdBy) === key
-      if (kind === 'sa') return personLabel(item.saBy) === key
-      if (kind === 'engineer') return personLabel(item.engineerBy) === key
-      if (kind === 'tester') return personLabel(item.testerBy) === key
-      if (kind === 'category') return item.fetched && categoryLabel(item.category) === key
-      if (kind === 'module') return moduleOf(item.title) === key
-      return false
-    })
-    .sort((a, b) => a.id - b.id)
-}
+const {
+  items,
+  fetchedN,
+  issueN,
+  taskN,
+  hasRm,
+  noRm,
+  openN,
+  typeSlices,
+  redmineSlices,
+  stateSlices,
+  categorySlices,
+  monthRows,
+  assigneeRows,
+  createdByRows,
+  saRows,
+  engineerRows,
+  testerRows,
+  moduleRows,
+  rowsFor,
+} = useDashboardStats()
 
 function openList(kind: string, key: string, title: string) {
   listRows.value = rowsFor(kind, key)
@@ -528,7 +234,7 @@ async function load() {
   try {
     await itemsStore.refresh()
   } catch (err) {
-    loadError.value = `載入失敗：${String(err)}`
+    loadError.value = `載入失敗：${errorMessage(err)}`
   } finally {
     loading.value = false
   }
@@ -634,90 +340,6 @@ onMounted(load)
   margin: 0 0 0.75rem;
   font-size: 0.95rem;
   font-weight: 650;
-}
-.chart-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.donut {
-  width: 140px;
-  height: 140px;
-  flex-shrink: 0;
-}
-.donut-total {
-  font-size: 7px;
-  fill: var(--p-text-color, #222);
-  font-weight: 650;
-}
-.legend,
-.bars {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.legend {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.donut-slice { cursor: pointer; }
-.legend button,
-.bar-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  border: 0;
-  background: none;
-  padding: 0;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-}
-.legend i {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.legend b,
-.bar-n {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-.bars {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-.bar-label {
-  width: 120px;
-  flex-shrink: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.bar-track {
-  flex: 1;
-  min-width: 48px;
-  height: 10px;
-  background: var(--p-surface-200, #e5e7eb);
-  border-radius: 99px;
-  overflow: hidden;
-}
-.bar-fill {
-  display: block;
-  height: 100%;
-  background: var(--p-blue-500);
-  border-radius: 99px;
-}
-.bar-n {
-  width: 4.5rem;
-  text-align: right;
-  color: var(--p-text-muted-color);
 }
 .list-toolbar {
   display: flex;

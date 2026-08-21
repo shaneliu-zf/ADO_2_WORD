@@ -8,6 +8,7 @@ backend/secrets/config.json
 # 輸出與快取
 backend/output/
 __pycache__/
+**/__pycache__/
 *.pyc
 .Python
 .venv/

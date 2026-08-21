@@ -16,8 +16,9 @@
 |                          | 職責                                                           |
 | ------------------------ | ------------------------------------------------------------ |
 | `frontend/`              | Vue + PrimeVue。畫面、狀態、呼叫 API。不要在前端重寫抓 ADO、分組、Bob、填 Word。      |
-| `backend/`               | Flask（`frontend_api.py`）+ `pipeline/`。業務邏輯、檔案、對外 API。        |
+| `backend/`               | Flask（`app.py` 路由）+ `pipeline/`。工作區檔在 `workspace.py`，項目／報告在 `items.py`。Word 填範本在 `pipeline/word/`。 |
 | `backend/utils/paths.py` | 路徑常數。`templates`、`secrets`、`output` 都在 backend 底下，不要加回專案根目錄。 |
+| `backend/utils/report_schema.py` | 報告 JSON 契約。Bob 寫入與畫面儲存都會驗證。 |
 
 
 前端只透過 HTTP 跟後端說話（`frontend/src/api/client.ts`）。
@@ -37,6 +38,6 @@
 
 已知、暫時接受，不要在無關任務裡清掉或再疊一層：
 
-- `frontend_api.py` 很大，API 與檔案處理混在一起。新端點先跟現有風格，不要另開一套平行 API。
+- `app.py` 只放路由。新端點先跟現有風格，不要另開一套平行 API。
 - Pipeline 仍有 `list_ids`；網頁列出 ID 走「載入 ID」，右側只有下載 → 分組 → 報告 → Word。兩邊不要硬湊成同一套步驟編號。
 

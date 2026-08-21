@@ -27,13 +27,7 @@ html {
   font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif;
 }
 
-body,
-.p-component,
-.p-button,
-.p-inputtext,
-.p-datatable,
-.p-dialog,
-.p-toast,
+/* Multiselect 下拉不要被 max-height 卡住；不要套到 dialog，否則內容底部會被裁切 */
 .p-multiselect-overlay .p-multiselect-list-container,
 .p-multiselect-overlay .p-virtualscroller,
 .p-multiselect-overlay .p-multiselect-items-wrapper {

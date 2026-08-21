@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
@@ -21,7 +22,7 @@ from backend.items import (
 from backend.pipeline_job import abort, allowed_scripts, is_running, resolve_script, start_sse
 from backend.utils.config_io import read_config_file, save_config
 from backend.utils.json_io import write_json
-from backend.utils.paths import ADO_DIR, CONFIG_PATH, JSON_DIR, STYLE_PATH, report_json_path
+from backend.utils.paths import ADO_DIR, CONFIG_PATH, DOCS_DIR, JSON_DIR, STYLE_PATH, report_json_path
 from backend.utils.report_schema import find_report, locate_report, validate_report
 from backend.utils.work_item_parser import read_work_item, stringify
 from backend.workspace import (
@@ -350,6 +351,19 @@ def static_ado(filename: str):
     if not ADO_DIR.exists():
         return ("尚未抓取 ADO", 404)
     return send_from_directory(ADO_DIR, filename)
+
+
+@app.get("/docs/<path:filename>")
+def static_docs(filename: str):
+    if not DOCS_DIR.exists():
+        return ("找不到文件", 404)
+    name = Path(filename).name
+    if name != filename or not name:
+        return _json_error(ValueError("檔名不正確"), 400)
+    path = DOCS_DIR / name
+    if not path.is_file():
+        return _json_error(FileNotFoundError("找不到該文件。"), 404)
+    return send_from_directory(DOCS_DIR, name, as_attachment=False)
 
 
 @app.get("/style.css")

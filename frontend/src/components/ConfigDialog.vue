@@ -8,6 +8,10 @@
     :style="{ width: '40rem' }"
     @show="loadConfig"
   >
+    <p class="guide">
+      請參考
+      <a href="/docs/設定說明.docx" target="_blank" rel="noopener">設定說明</a>
+    </p>
     <div v-if="loading" class="state-msg">
       <ProgressSpinner style="width:2rem;height:2rem" />
       <span>載入中…</span>
@@ -23,7 +27,7 @@
         <InputText id="cfg-project" v-model="form.project" class="w-full" />
       </div>
       <div class="field">
-        <label for="cfg-pat">PAT</label>
+        <label for="cfg-pat">ADO Personal Access Token</label>
         <Password
           id="cfg-pat"
           v-model="form.pat"
@@ -134,6 +138,17 @@ async function handleSave() {
   font-size: 0.88rem;
   line-height: 1.5;
   color: var(--p-text-secondary-color);
+}
+
+.guide {
+  margin: 0 0 0.85rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--p-text-color);
+}
+
+.guide a {
+  color: var(--p-primary-color, #2563eb);
 }
 
 .field {

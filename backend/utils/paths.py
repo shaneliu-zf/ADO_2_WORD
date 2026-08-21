@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BACKEND_DIR.parent
+DOCS_DIR = PROJECT_ROOT / "docs"
 CONFIG_PATH = BACKEND_DIR / "secrets" / "config.json"
 TEMPLATES_DIR = BACKEND_DIR / "templates"
 STYLE_PATH = TEMPLATES_DIR / "style.css"

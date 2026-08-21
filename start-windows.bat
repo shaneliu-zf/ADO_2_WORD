@@ -35,16 +35,22 @@ call :ensure_frontend
 if errorlevel 1 exit /b 1
 
 echo === 啟動前後端 ===
-echo 瀏覽器請開：http://127.0.0.1:5173/
+echo 5173 就緒後會自動打開：http://127.0.0.1:5173/
 echo 按 Ctrl+C 會同時停止 Flask 與 Vite
 echo.
 
 cd /d "%ROOT%"
 set PYTHONUNBUFFERED=1
 start "ADO_2_WORD_BACKEND" /D "%ROOT%" /B "!PY!" -m backend.app
-cd /d "%ROOT%\frontend"
-cmd /c npm run dev
+start "ADO_2_WORD_FRONTEND" /D "%ROOT%\frontend" /B cmd /c npm run dev
+call :wait_for_port 5173
+if errorlevel 1 (
+  echo 警告：等待 http://127.0.0.1:5173/ 啟動逾時，請手動打開瀏覽器。
+) else (
+  start "" "http://127.0.0.1:5173/"
+)
 cd /d "%ROOT%"
+call :wait_forever
 call :kill_port 5000
 call :kill_port 5173
 exit /b 0
@@ -211,6 +217,23 @@ if not "!NPM_EC!"=="0" (
   exit /b 1
 )
 exit /b 0
+
+:wait_for_port
+set "PORT=%~1"
+set /a RETRIES=120
+:wait_for_port_loop
+for /f "tokens=5" %%P in ('netstat -ano 2^>nul ^| findstr ":%PORT%" ^| findstr "LISTENING"') do (
+  if not "%%P"=="0" exit /b 0
+)
+set /a RETRIES-=1
+if %RETRIES% LEQ 0 exit /b 1
+timeout /t 1 /nobreak >nul
+goto wait_for_port_loop
+
+:wait_forever
+:wait_forever_loop
+timeout /t 86400 /nobreak >nul
+goto wait_forever_loop
 
 :kill_port
 for /f "tokens=5" %%P in ('netstat -ano 2^>nul ^| findstr ":%~1" ^| findstr "LISTENING"') do (

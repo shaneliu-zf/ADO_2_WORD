@@ -3,43 +3,52 @@
     <div class="content-row">
       <div class="table-area">
         <div class="left-toolbar">
-          <Button
-            label="載入 ID"
-            icon="pi pi-download"
-            outlined
-            :disabled="pipelineStore.isRunning"
-            @click="importVisible = true"
-          />
-          <Button
-            label="只留下勾選項目"
-            icon="pi pi-filter"
-            outlined
-            :disabled="!canKeepOnlySelected"
-            :loading="keeping"
-            @click="confirmKeepOnly"
-          />
-          <Button
-            label="刪除"
-            icon="pi pi-trash"
-            outlined
-            severity="danger"
-            :disabled="itemsStore.selectedIds.size === 0 || pipelineStore.isRunning"
-            :loading="deleting"
-            @click="confirmDelete"
-          />
-          <Button
-            label="分析"
-            icon="pi pi-chart-bar"
-            outlined
-            class="settings-btn"
-            @click="router.push('/dashboard')"
-          />
-          <Button
-            label="設定"
-            icon="pi pi-cog"
-            outlined
-            @click="configVisible = true"
-          />
+          <a href="https://www.ibm.com/us-en" target="_blank" rel="noopener noreferrer" class="toolbar-logo-link">
+            <img src="/Eye Bee M.svg" alt="IBM" class="toolbar-logo" />
+          </a>
+          <div class="toolbar-actions">
+            <Button
+              label="載入 ID"
+              icon="pi pi-download"
+              outlined
+              class="toolbar-btn"
+              :disabled="pipelineStore.isRunning"
+              @click="importVisible = true"
+            />
+            <Button
+              label="只留下勾選項目"
+              icon="pi pi-filter"
+              outlined
+              class="toolbar-btn"
+              :disabled="!canKeepOnlySelected"
+              :loading="keeping"
+              @click="confirmKeepOnly"
+            />
+            <Button
+              label="刪除"
+              icon="pi pi-trash"
+              outlined
+              class="toolbar-btn"
+              severity="danger"
+              :disabled="itemsStore.selectedIds.size === 0 || pipelineStore.isRunning"
+              :loading="deleting"
+              @click="confirmDelete"
+            />
+            <Button
+              label="分析"
+              icon="pi pi-chart-bar"
+              outlined
+              class="toolbar-btn settings-btn"
+              @click="router.push('/dashboard')"
+            />
+            <Button
+              label="設定"
+              icon="pi pi-cog"
+              outlined
+              class="toolbar-btn"
+              @click="configVisible = true"
+            />
+          </div>
         </div>
 
         <div v-if="loading" class="loading-msg">
@@ -250,8 +259,42 @@ onMounted(refresh)
 .left-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0;
   flex-shrink: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: 1rem;
+  flex: 1;
+}
+
+.toolbar-logo-link {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.toolbar-logo {
+  width: 6.5rem;
+  height: 2.15rem;
+  object-fit: contain;
+  object-position: left center;
+  flex-shrink: 0;
+}
+
+.toolbar-actions :deep(.toolbar-btn) {
+  font-size: 0.92rem;
+}
+
+.toolbar-actions :deep(.toolbar-btn .p-button) {
+  padding: 0.55rem 0.95rem;
+}
+
+.toolbar-actions :deep(.toolbar-btn .p-button-icon) {
+  font-size: 1rem;
 }
 
 .settings-btn {

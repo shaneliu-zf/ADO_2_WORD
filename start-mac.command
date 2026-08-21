@@ -115,9 +115,34 @@ ensure_python_packages
 ensure_node
 ensure_frontend
 say "=== 啟動前後端 ==="
-say "瀏覽器請開：http://127.0.0.1:5173/"
+say "5173 就緒後會自動打開：http://127.0.0.1:5173/"
 say "按 Ctrl+C 會同時停止 Flask 與 Vite"
 say ""
+
+wait_for_port() {
+  local port="$1"
+  local retries=120
+  while (( retries > 0 )); do
+    if python3 - <<PY >/dev/null 2>&1
+import socket
+sock = socket.socket()
+sock.settimeout(0.2)
+try:
+    sock.connect(("127.0.0.1", ${port}))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+raise SystemExit(0)
+PY
+    then
+      return 0
+    fi
+    sleep 0.5
+    ((retries--))
+  done
+  return 1
+}
 
 PIDS=()
 cleanup_and_maybe_pause() {
@@ -139,4 +164,11 @@ trap cleanup_and_maybe_pause EXIT INT TERM
 "$PY" -m backend.app &
 PIDS+=("$!")
 cd "$ROOT/frontend"
-npm run dev
+npm run dev &
+PIDS+=("$!")
+if wait_for_port 5173; then
+  open "http://127.0.0.1:5173/"
+else
+  say "警告：等待 http://127.0.0.1:5173/ 啟動逾時，請手動打開瀏覽器。"
+fi
+wait

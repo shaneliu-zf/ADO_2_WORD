@@ -4,7 +4,6 @@
       label="全流程自動完成"
       icon="pi pi-bolt"
       class="full-run-btn"
-      severity="success"
       :loading="pipelineBusy"
       :disabled="isRunning"
       @click="runAll()"
@@ -55,7 +54,6 @@
         :label="executeLabel"
         icon="pi pi-play"
         class="btn-run"
-        severity="success"
         :loading="pipelineBusy"
         @click="runCurrent()"
       />
@@ -86,7 +84,7 @@
       <p class="confirm-msg">{{ confirmMessage }}</p>
       <template #footer>
         <Button :label="confirmSkipLabel" outlined @click="confirmSkip" />
-        <Button :label="confirmRedoLabel" severity="success" @click="confirmRedo" />
+        <Button :label="confirmRedoLabel" @click="confirmRedo" />
       </template>
     </Dialog>
 
@@ -94,7 +92,7 @@
       <p class="confirm-msg">Word 已合併完成，是否下載？</p>
       <template #footer>
         <Button label="否" outlined @click="declineSave()" />
-        <Button label="是" severity="success" :loading="savingWord" @click="onSaveWord()" />
+        <Button label="是" :loading="savingWord" @click="onSaveWord()" />
       </template>
     </Dialog>
 
@@ -107,7 +105,7 @@
       </ul>
       <template #footer>
         <Button label="取消" outlined severity="secondary" @click="prereqVisible = false" />
-        <Button label="先完成" severity="success" @click="confirmPrereq" />
+        <Button label="先完成" @click="confirmPrereq" />
       </template>
     </Dialog>
   </div>
@@ -418,7 +416,7 @@ function runAll() {
   height: 100%;
   width: 0;
   border-radius: 999px;
-  background: var(--p-green-500, #22c55e);
+  background: var(--p-primary-500, #0f62fe);
   transition: width 0.25s ease;
 }
 
@@ -453,13 +451,13 @@ function runAll() {
 
 .step.done,
 .step.reached {
-  border-left-color: var(--p-green-500, #22c55e);
+  border-left-color: var(--p-primary-500, #0f62fe);
 }
 
 .step.current {
-  border-left-color: var(--p-green-600, #16a34a);
-  box-shadow: 0 0 0 1px #bbf7d0 inset;
-  background: #f0fdf4;
+  border-left-color: var(--p-primary-600, #0043ce);
+  box-shadow: 0 0 0 1px #a6c8ff inset;
+  background: #edf4ff;
 }
 
 .step.pending {
@@ -481,12 +479,12 @@ function runAll() {
 
 .step.done .step-mark,
 .step.reached .step-mark {
-  background: #d3f9d8;
-  color: #2b8a3e;
+  background: #d0e2ff;
+  color: #0f62fe;
 }
 
 .step.current .step-mark {
-  background: var(--p-green-500, #22c55e);
+  background: var(--p-primary-500, #0f62fe);
   color: #fff;
 }
 
@@ -524,7 +522,7 @@ function runAll() {
   height: 100%;
   width: 0%;
   border-radius: 999px;
-  background: var(--p-green-500, #22c55e);
+  background: var(--p-primary-500, #0f62fe);
   transition: width 0.35s ease;
 }
 

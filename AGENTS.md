@@ -15,7 +15,7 @@
 
 |                          | 職責                                                           |
 | ------------------------ | ------------------------------------------------------------ |
-| `frontend/`              | Vue + PrimeVue。畫面、狀態、呼叫 API。不要在前端重寫抓 ADO、分組、Bob、填 Word。      |
+| `frontend/`              | Vue + PrimeVue。畫面、狀態、呼叫 API。不要在前端重寫抓 ADO、分組、Bob、填 Word。分析頁 `/dashboard` 只讀已載入項目，不要另開統計 API。 |
 | `backend/`               | Flask（`app.py` 路由）+ `pipeline/`。工作區檔在 `workspace.py`，項目／報告在 `items.py`。Word 填範本在 `pipeline/word/`。 |
 | `backend/utils/paths.py` | 路徑常數。`templates`、`secrets`、`output` 都在 backend 底下，不要加回專案根目錄。 |
 | `backend/utils/report_schema.py` | 報告 JSON 契約。Bob 寫入與畫面儲存都會驗證。 |

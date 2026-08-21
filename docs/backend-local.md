@@ -22,11 +22,13 @@ run_step("word", [902, 939])
 
 也可傳字串或物件：`"[902, 939]"`、`{"ids": [902, 939]}`、`{"groups": [[902, 939]]}`。
 
-| 從哪步 | 呼叫 |
-| --- | --- |
-| 指定 ID 全流程 | `run_from("fetch", [902, 939])` |
+
+| 從哪步                               | 呼叫                              |
+| --------------------------------- | ------------------------------- |
+| 指定 ID 全流程                         | `run_from("fetch", [902, 939])` |
 | ADO JSON 已在 `backend/output/ado/` | `run_from("group", [902, 939])` |
-| 報告 JSON 已在 `backend/output/json/` | `run_from("word", [902, 939])` |
+| 報告 JSON 已在 `backend/output/json/` | `run_from("word", [902, 939])`  |
+
 
 `run_from("word", …)` 只重產 Word，不跑 Bob。
 
@@ -37,18 +39,24 @@ rows = run_step("list_ids")  # [{id, title, work_item_type, state}, …]
 ids = [row["id"] for row in rows]
 ```
 
+如果真的要完蔥頭的話可以用 `run_from("list_ids")`，會先列出專案全部 ID 再一路抓到 Word。
+
+
+
 ## Pipeline 步驟
 
 ```
 fetch → group → report_by_llm → word
 ```
 
-| 步驟 | 輸入 | 輸出 | 寫入檔案 |
-| --- | --- | --- | --- |
-| `fetch` | ID 陣列 | 成功抓到的 ID | `backend/output/ado/` |
-| `group` | ID 陣列 | 分組 `[[id, id], …]` | — |
-| `report_by_llm` | ID 或分組 | 處理完的分組 | `backend/output/json/`（寫入前會驗證報告 JSON） |
-| `word` | ID 或分組 | docx 路徑（單一） | CLI 寫 `backend/output/report_*.docx`；網頁下載後會刪 |
+
+| 步驟              | 輸入     | 輸出                 | 寫入檔案                                          |
+| --------------- | ------ | ------------------ | --------------------------------------------- |
+| `fetch`         | ID 陣列  | 成功抓到的 ID           | `backend/output/ado/`                         |
+| `group`         | ID 陣列  | 分組 `[[id, id], …]` | CLI 不寫檔；網頁會寫 `backend/output/ado/groups.json` |
+| `report_by_llm` | ID 或分組 | 處理完的分組             | `backend/output/json/`（寫入前會驗證報告 JSON）         |
+| `word`          | ID 或分組 | docx 路徑（單一）        | CLI 寫 `backend/output/report_*.docx`；網頁下載後會刪  |
+
 
 輸入格式：
 

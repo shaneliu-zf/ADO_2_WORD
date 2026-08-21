@@ -30,9 +30,9 @@ fetch → group → report_by_llm → word
 | 步驟 | 模組 | 產出 |
 | --- | --- | --- |
 | fetch | `backend.pipeline.fetch` | `backend/output/ado/` |
-| group | `backend.pipeline.group` | 分組 |
+| group | `backend.pipeline.group` | 分組（網頁寫 `backend/output/ado/groups.json`） |
 | report_by_llm | `backend.pipeline.report_by_llm` | `backend/output/json/`（用 Bob） |
-| word | `backend.pipeline.word` | 網頁：選位置儲存後刪暫存；CLI：`backend/output/report_*.docx` |
+| word | `backend.pipeline.word` | 網頁：問是否下載，傳完後刪暫存；略過則檔留在 `backend/output/`。CLI：`backend/output/report_*.docx` |
 
 Word 套件：`oxml.py`（XML／儲存格）、`blocks.py`（填 meta／測項／附件／Commit）、`toc.py`（目錄）。
 
@@ -49,9 +49,13 @@ run_from("group", [902, 939])   # ADO JSON 已在
 run_from("word", [902, 939])    # 只重產 Word，不跑 Bob
 ```
 
-「關聯分組」上一步會問要不要解綁。「查看結果」可編輯報告（含 Commit），也可「用 Bob 重新生成報告」。
+「關聯分組」上一步會問要不要解綁。「查看結果」可編輯報告（含 Commit），也可「用 Bob 重新生成報告」。「查看資料」是 ADO 原文（可從 ADO 更新）。左上「分析」可看類型／狀態／Redmine 等統計。
+
+不要用 `run_from("list_ids")`（會抓整個專案）。網頁列出 ID 走「載入 ID」→ `POST /api/items/summaries`。
 
 ## 查沒有 Redmine 的報告
+
+網頁「分析」可篩沒有 Redmine。用檔案查：
 
 ```bash
 python3 - << 'PY'

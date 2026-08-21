@@ -28,7 +28,7 @@ def load_config() -> dict[str, Any]:
     if not CONFIG_PATH.exists():
         raise FileNotFoundError(
             f"找不到設定檔：{CONFIG_PATH}\n"
-            "請複製 secrets/config.json.example 為 secrets/config.json，再填入組織、專案與 PAT。"
+            "請複製 backend/secrets/config.json.example 為 backend/secrets/config.json，再填入組織、專案與 PAT。"
         )
     config = load_json_file(CONFIG_PATH)
     if not isinstance(config, dict):
@@ -38,7 +38,7 @@ def load_config() -> dict[str, Any]:
 
     pat = str(config.get("pat") or "").strip()
     if not pat or pat in {"你的 PAT", "YOUR_PAT"}:
-        raise ValueError('請在 secrets/config.json 的 "pat" 欄位貼上 Personal Access Token。')
+        raise ValueError('請在 backend/secrets/config.json 的 "pat" 欄位貼上 Personal Access Token。')
 
     config["pat"] = pat
     return config
@@ -73,7 +73,7 @@ def read_config_file() -> dict[str, Any]:
 
 
 def save_config(updates: dict[str, Any]) -> dict[str, str]:
-    """寫入 secrets/config.json，只更新允許的欄位。"""
+    """寫入 backend/secrets/config.json，只更新允許的欄位。"""
     existing: dict[str, Any] = {}
     if CONFIG_PATH.exists():
         data = load_json_file(CONFIG_PATH)

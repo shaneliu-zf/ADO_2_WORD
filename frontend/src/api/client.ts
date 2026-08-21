@@ -64,6 +64,10 @@ export function refreshWorkItem(id: number): Promise<{ ok: boolean }> {
   return http.post<{ ok: boolean }>(`/api/items/${id}/refresh`).then(r => r.data)
 }
 
+export function regenerateReport(id: number): Promise<Report> {
+  return http.post<Report>(`/api/items/${id}/regenerate-report`).then(r => r.data)
+}
+
 export function updateItem(id: number, report: Report): Promise<{ ok: boolean }> {
   return http.put<{ ok: boolean }>(`/api/items/${id}`, report).then(r => r.data).catch(unwrapApiError)
 }

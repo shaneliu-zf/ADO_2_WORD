@@ -1,6 +1,6 @@
 <template>
   <Toast />
-  <ConfirmDialog />
+  <ConfirmDialog :baseZIndex="3000" />
   <RouterView />
 </template>
 

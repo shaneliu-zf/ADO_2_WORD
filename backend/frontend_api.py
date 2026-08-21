@@ -501,6 +501,18 @@ def _ado_ids_from_report(payload: dict[str, Any]) -> list[int]:
     return ids
 
 
+def _report_group_ids(item_id: int) -> list[int]:
+    for group in _load_group_id_lists():
+        if item_id in group:
+            return list(group)
+    found = locate_report(item_id)
+    if found is not None:
+        ids = _ado_ids_from_report(found[1])
+        if ids:
+            return ids
+    return [item_id]
+
+
 def _report_path_for(work_item_id: int):
     found = locate_report(work_item_id)
     if found is None:
@@ -919,6 +931,26 @@ def refresh_work_item(item_id: int):
     except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
         return _json_error(exc)
     except Exception as exc:  # noqa: BLE001 — Azure DevOps 請求失敗
+        return _json_error(exc, 502)
+
+
+@bp.post("/api/items/<int:item_id>/regenerate-report")
+def regenerate_item_report(item_id: int):
+    if _pipeline_running:
+        return _json_error(RuntimeError("流程正在執行，請稍後再產生報告。"), 409)
+    group = _report_group_ids(item_id)
+    try:
+        from backend.pipeline.report_by_llm import process_group
+        from backend.utils.bob_llm import load_bob_config
+
+        process_group(group, load_bob_config())
+        report = find_report(item_id)
+        if report is None:
+            return _json_error(FileNotFoundError("重新產生後仍找不到報告。"), 500)
+        return jsonify(report)
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
+        return _json_error(exc)
+    except Exception as exc:  # noqa: BLE001 — Bob 請求失敗
         return _json_error(exc, 502)
 
 

@@ -1,75 +1,59 @@
 ---
 name: ado2word
 description: >-
-  ADO_2_WORD 專案的 AI 工作指南。涵蓋 Pipeline 結構（list_ids→fetch→group→report_by_llm→word）、
-  config.json 欄位規範、Redmine 抽取規則、Word 產出細節、以及「使用者已刪除的內容不要加回去」的協作原則。
-  當在這個專案工作、或被問到 config、Redmine、Word 目錄、測試項目表寬度、Bob API 設定等話題時使用。
-disable-model-invocation: true
+  Run or debug the ADO_2_WORD pipeline (list_ids, fetch, group, report_by_llm, word),
+  regenerate Word without Bob, inspect report JSON, or work on the Vue/Flask app.
+  Use when starting the app, rerunning a pipeline step, filling Word, grouping related
+  work items, editing reports, or looking up output paths.
 ---
 
-# ADO_2_WORD 工作指南
+# ADO_2_WORD 操作
 
-完整細節在 [`AGENTS.md`](../../AGENTS.md)，這裡只列最需要注意的規則。
+專案介紹與開發規範見根目錄 `AGENTS.md`。這裡只寫怎麼跑 pipeline。
 
----
+路徑一律 `from backend.utils.paths import …`。
 
-## 協作原則
+## 啟動
 
-**使用者已刪除的內容，不要加回去。**
+- Mac：`start-mac.command`；Windows：`start-windows.bat`
+- 畫面：http://127.0.0.1:5173/
+- 沒有 `backend/secrets/config.json` 時，網頁會先開設定再談載入資料
 
-- 編輯前先確認當前檔案版本，不要假設「之前有某段所以要補回」。
+## Pipeline
 
----
+```
+fetch → group → report_by_llm → word
+```
 
-## config.json 欄位
+網頁右側是 4 步（下載 → 分組 → 報告 → Word）。「全流程自動完成」只處理勾選項目，從下載開始。列出 ID 在左上「載入 ID」，不是步驟列的一步。
 
-只保留：`organization`、`project`、`pat`、`ado_base_url`、`bob_api_key`。
+| 步驟 | 模組 | 產出 |
+| --- | --- | --- |
+| fetch | `backend.pipeline.fetch` | `backend/output/ado/` |
+| group | `backend.pipeline.group` | 分組 |
+| report_by_llm | `backend.pipeline.report_by_llm` | `backend/output/json/`（用 Bob） |
+| word | `backend.pipeline.word` | `backend/output/report_*.docx` |
 
----
+Prompt：`backend/templates/llm_prompt.txt`。
 
-## Redmine 規則
-
-- **優先**從標題結尾抓，格式 `(63852.64178)`。
-- 標題沒有，再從**留言**找（`BUG #`、`redmine` 關鍵字）。
-- 都沒有：Word 標題寫 `ADO#902`，不寫 `Redmine#XXXX`。
-- Related ADO **直接合併**，不看 Redmine（`group.py`）。
-
----
-
-## Fetch 產出
-
-- 存 `output/ado/work_item_*.json` 與圖片，不要加回逐筆 HTML 樣板。
-- 預覽：`python3 -m backend.app`（一份 HTML 去讀各個 JSON）。
-
----
-
-## Word 產出重點
-
-| 問題 | 解法 |
-|------|------|
-| 測試項目表太寬 | `fill_items_table` 傳 `target_width`，縮成與主旨表等寬 |
-| 標題數字黏文字 | `ensure_heading_number_space` 設 `suff=space` |
-| 目錄自動更新彈窗 | 不設 `updateFields`；目錄已由 `refresh_toc` 直接重寫 |
-| 沒有 Redmine 的 ADO 標題格式 | `ado_heading_text` 只有有值才加 `/ Redmine#…` |
-
----
-
-## 只重產 Word（不跑 Bob）
+從專案根目錄：
 
 ```python
 from backend.pipeline import run_from
-run_from("word", [902, 939])
+run_from("fetch", [902, 939])   # 全流程（指定 ID）
+run_from("group", [902, 939])   # ADO JSON 已在
+run_from("word", [902, 939])    # 只重產 Word，不跑 Bob
 ```
 
----
+「關聯分組」上一步會問要不要解綁。「查看結果」可編輯報告（含 Commit），也可「用 Bob 重新生成報告」。
 
-## 查沒有 Redmine 的 ADO
+## 查沒有 Redmine 的報告
 
 ```bash
 python3 - << 'PY'
 import json
 from pathlib import Path
-for path in sorted(Path('output/json').glob('work_item_*.json')):
+for path in sorted(Path('backend/output/json').glob('work_item_*.json')):
     data = json.loads(path.read_text(encoding='utf-8'))
     if not str(data.get('redmine_id') or '').strip():
         ids = data.get('ado_ids') or [data.get('ado_id')]

@@ -23,12 +23,12 @@ FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.IGNORECASE | re.DOTALL)
 
 
 def load_bob_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """從 secrets/config.json（或傳入的 dict）讀取 Bob 設定。"""
+    """從 backend/secrets/config.json（或傳入的 dict）讀取 Bob 設定。"""
     if config is None:
         if not CONFIG_PATH.exists():
             raise FileNotFoundError(
                 f"找不到設定檔：{CONFIG_PATH}\n"
-                "請複製 secrets/config.json.example 為 secrets/config.json，再填入 bob_api_key。"
+                "請複製 backend/secrets/config.json.example 為 backend/secrets/config.json，再填入 bob_api_key。"
             )
         config = load_json_file(CONFIG_PATH)
     if not isinstance(config, dict):
@@ -37,7 +37,7 @@ def load_bob_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
     api_key = str(config.get("bob_api_key") or os.environ.get("BOB_API_KEY") or "").strip()
     if not api_key or api_key in PLACEHOLDER_KEYS:
         raise ValueError(
-            '請在 secrets/config.json 的 "bob_api_key" 貼上 IBM Bob API key。\n'
+            '請在 backend/secrets/config.json 的 "bob_api_key" 貼上 IBM Bob API key。\n'
             "建議在 Bob 網站申請 Scope 為 Inference 的 key，這樣不必再填 team id。\n"
             "說明：https://bob.ibm.com/docs/ide/account/api-keys"
         )
@@ -125,7 +125,7 @@ def format_http_error(status: int, body: str, url: str) -> str:
     hint = ""
     if status == 401:
         hint = (
-            "\n請確認 secrets/config.json 的 bob_api_key 正確，且申請的是 Inference key。"
+            "\n請確認 backend/secrets/config.json 的 bob_api_key 正確，且申請的是 Inference key。"
             "說明：https://bob.ibm.com/docs/ide/account/api-keys"
         )
     elif status == 403:

@@ -13,7 +13,7 @@
       <span>載入中…</span>
     </div>
     <div v-else class="form">
-      <p v-if="required" class="hint">找不到 secrets/config.json，請填寫後儲存。</p>
+      <p v-if="required" class="hint">找不到 backend/secrets/config.json，請填寫後儲存。</p>
       <div class="field">
         <label for="cfg-org">ADO 組織</label>
         <InputText id="cfg-org" v-model="form.organization" class="w-full" />

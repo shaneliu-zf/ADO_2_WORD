@@ -45,6 +45,16 @@
       <div v-else class="tab-content">
         <template v-if="report">
           <div class="tab-toolbar">
+            <Button
+              v-if="!editing"
+              label="用 Bob 重新生成報告"
+              icon="pi pi-replay"
+              size="small"
+              outlined
+              :loading="regenerating"
+              :disabled="pipelineStore.isRunning"
+              @click="confirmRegenerate"
+            />
             <Button v-if="!editing" label="編輯" icon="pi pi-pencil" size="small" outlined @click="startEdit" />
             <template v-else>
               <Button label="儲存" icon="pi pi-save" size="small" :loading="saving" @click="handleSave(editorRef?.getDraft())" />
@@ -74,9 +84,10 @@ import ProgressSpinner from 'primevue/progressspinner'
 import { useToast } from 'primevue/usetoast'
 import ReportEditor from '@/components/ReportEditor.vue'
 import HtmlPreview from '@/components/HtmlPreview.vue'
-import { fetchItemJson, fetchItemHtml, updateItem, refreshWorkItem } from '@/api/client'
+import { fetchItemJson, fetchItemHtml, updateItem, refreshWorkItem, regenerateReport } from '@/api/client'
 import { useItemsStore } from '@/stores/items'
 import { usePipelineStore } from '@/stores/pipeline'
+import { useConfirm } from 'primevue/useconfirm'
 import type { AdoItem, Report } from '@/types'
 
 const props = defineProps<{
@@ -103,12 +114,14 @@ const dialogHeader = computed(() =>
 )
 
 const toast = useToast()
+const confirm = useConfirm()
 const loading = ref(false)
 const loadError = ref('')
 const report = ref<Report | null>(null)
 const htmlContent = ref('')
 const saving = ref(false)
 const refreshing = ref(false)
+const regenerating = ref(false)
 const editing = ref(false)
 const editorRef = ref<{ getDraft: () => Report; reset: () => void } | null>(null)
 
@@ -169,6 +182,41 @@ async function refreshAdo() {
 
 function startEdit() {
   editing.value = true
+}
+
+function confirmRegenerate() {
+  if (!itemId.value || pipelineStore.isRunning || regenerating.value) return
+  confirm.require({
+    header: '用 Bob 重新生成報告',
+    message: '會依目前 ADO 資料重新產生此報告（會扣 Bobcoins），現有內容會被覆蓋。確定要繼續嗎？',
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: '取消', severity: 'secondary', outlined: true },
+    acceptProps: { label: '重新生成' },
+    accept: () => {
+      void regenerate()
+    },
+  })
+}
+
+async function regenerate() {
+  if (!itemId.value) return
+  regenerating.value = true
+  try {
+    report.value = await regenerateReport(itemId.value)
+    const selected = [...itemsStore.selectedIds]
+    await itemsStore.refresh()
+    itemsStore.setSelectedIds(selected.filter(id => itemsStore.items.some(item => item.id === id)))
+    toast.add({
+      severity: 'success',
+      summary: '已重新生成',
+      detail: `ADO ${itemId.value} 報告已更新`,
+      life: 3000,
+    })
+  } catch (err) {
+    toast.add({ severity: 'error', summary: '重新生成失敗', detail: String(err), life: 5000 })
+  } finally {
+    regenerating.value = false
+  }
 }
 
 function cancelEdit() {

@@ -18,6 +18,7 @@ description: >-
 - Mac：`start-mac.command`；Windows：`start-windows.bat`
 - 畫面：http://127.0.0.1:5173/
 - 沒有 `backend/secrets/config.json` 時，網頁會先開設定再談載入資料
+- 設定可開「展示模式」：用 `backend/demo/` 虛構 ADO／Word 範本，不連客戶環境、不呼叫 Bob
 
 ## Pipeline
 

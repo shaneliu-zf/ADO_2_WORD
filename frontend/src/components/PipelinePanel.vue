@@ -28,7 +28,7 @@
         </span>
         <span class="step-body">
           <strong>{{ s.label }}</strong>
-          <span class="step-hint">{{ s.hint }}</span>
+          <span class="step-hint">{{ stepHint(s) }}</span>
           <span
             v-if="shouldShowStepBar(s.index)"
             class="step-progress"
@@ -112,7 +112,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch, type Ref } from 'vue'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
@@ -126,6 +126,7 @@ import type { AdoItem } from '@/types'
 const pipelineStore = usePipelineStore()
 const itemsStore = useItemsStore()
 const toast = useToast()
+const demoMode = inject<Ref<boolean>>('demoMode', ref(false))
 const { currentStep, reachedStep, isRunning, runningStep, showLog, status, statusKind, stepProgress, pendingDocx, savingWord } = storeToRefs(pipelineStore)
 
 const pipelineBusy = computed(() => isRunning.value && (runningStep.value ?? -1) >= 0)
@@ -155,6 +156,14 @@ const confirmMessage = computed(() =>
 )
 const confirmRedoLabel = computed(() => (confirmKind.value === 'fetch' ? '重新下載' : '重新產生'))
 const confirmSkipLabel = '略過'
+
+function stepHint(step: (typeof STEP_DEFS)[number]): string {
+  if (!demoMode.value) return step.hint
+  if (step.script === 'fetch') return '載入虛構 Work Item（不連 Azure DevOps）'
+  if (step.script === 'report') return '套用預先準備的報告內容（不呼叫 Bob）'
+  if (step.script === 'word') return '填進展示用範本，完成後下載 Word'
+  return step.hint
+}
 
 const executeLabel = computed(() => {
   if (isRunning.value && pipelineBusy.value) return '處理中…'

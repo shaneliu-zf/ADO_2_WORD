@@ -11,6 +11,28 @@ from backend.utils.paths import CONFIG_PATH
 
 CONFIG_KEYS = ("organization", "project", "pat", "ado_base_url", "bob_api_key")
 PLACEHOLDER_PATS = {"", "你的 PAT", "YOUR_PAT"}
+DEMO_TRUE = {"1", "true", "yes", "on"}
+
+
+def parse_demo_mode(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in DEMO_TRUE
+
+
+def is_demo_mode(config: dict[str, Any] | None = None) -> bool:
+    """展示模式：用虛構 ADO／範本，不連客戶 Azure DevOps。"""
+    if config is not None:
+        return parse_demo_mode(config.get("demo_mode"))
+    if not CONFIG_PATH.exists():
+        return False
+    try:
+        data = load_json_file(CONFIG_PATH)
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+    return parse_demo_mode(data.get("demo_mode"))
 
 
 def load_json_file(path: Path) -> Any:
@@ -36,6 +58,16 @@ def load_config() -> dict[str, Any]:
             f"{CONFIG_PATH} 必須是 JSON 物件，例如 {{\"organization\": \"...\", \"pat\": \"...\"}}"
         )
 
+    config["demo_mode"] = parse_demo_mode(config.get("demo_mode"))
+    if config["demo_mode"]:
+        config["organization"] = str(config.get("organization") or "demo-org").strip() or "demo-org"
+        config["project"] = str(config.get("project") or "LumenWMS").strip() or "LumenWMS"
+        config["pat"] = str(config.get("pat") or "demo").strip() or "demo"
+        if not str(config.get("ado_base_url") or "").strip():
+            config["ado_base_url"] = "https://dev.azure.com"
+        config["bob_api_key"] = str(config.get("bob_api_key") or "").strip()
+        return config
+
     pat = str(config.get("pat") or "").strip()
     if not pat or pat in {"你的 PAT", "YOUR_PAT"}:
         raise ValueError('請在 backend/secrets/config.json 的 "pat" 欄位貼上 Personal Access Token。')
@@ -44,13 +76,14 @@ def load_config() -> dict[str, Any]:
     return config
 
 
-def empty_config() -> dict[str, str]:
+def empty_config() -> dict[str, Any]:
     return {
         "organization": "",
         "project": "",
         "pat": "",
         "ado_base_url": "https://dev.azure.com",
         "bob_api_key": "",
+        "demo_mode": False,
     }
 
 
@@ -67,12 +100,13 @@ def read_config_file() -> dict[str, Any]:
         if value is None:
             continue
         payload[key] = str(value).strip()
+    payload["demo_mode"] = parse_demo_mode(data.get("demo_mode"))
     if not payload["ado_base_url"]:
         payload["ado_base_url"] = "https://dev.azure.com"
     return payload
 
 
-def save_config(updates: dict[str, Any]) -> dict[str, str]:
+def save_config(updates: dict[str, Any]) -> dict[str, Any]:
     """寫入 backend/secrets/config.json，只更新允許的欄位。"""
     existing: dict[str, Any] = {}
     if CONFIG_PATH.exists():
@@ -83,18 +117,22 @@ def save_config(updates: dict[str, Any]) -> dict[str, str]:
     for key in CONFIG_KEYS:
         if key in existing and existing[key] is not None:
             payload[key] = str(existing[key]).strip()
+    payload["demo_mode"] = parse_demo_mode(existing.get("demo_mode"))
     for key in CONFIG_KEYS:
         if key not in updates:
             continue
         payload[key] = str(updates.get(key) or "").strip()
+    if "demo_mode" in updates:
+        payload["demo_mode"] = parse_demo_mode(updates.get("demo_mode"))
     if not payload["ado_base_url"]:
         payload["ado_base_url"] = "https://dev.azure.com"
 
-    missing = [key for key in ("organization", "project", "pat", "bob_api_key") if not payload[key]]
-    if missing:
-        raise ValueError("請填寫：" + "、".join(missing))
-    if payload["pat"] in PLACEHOLDER_PATS:
-        raise ValueError('請在 "pat" 欄位貼上 Personal Access Token。')
+    if not payload["demo_mode"]:
+        missing = [key for key in ("organization", "project", "pat", "bob_api_key") if not payload[key]]
+        if missing:
+            raise ValueError("請填寫：" + "、".join(missing))
+        if payload["pat"] in PLACEHOLDER_PATS:
+            raise ValueError('請在 "pat" 欄位貼上 Personal Access Token。')
 
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     out: dict[str, Any] = dict(existing)

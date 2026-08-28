@@ -11,7 +11,7 @@ Vue 畫面用的 API（`backend/app.py`）。
 | 方法 | 路徑 | 說明 |
 | --- | --- | --- |
 | `GET` | `/api/config` | 讀設定 |
-| `GET` | `/api/config/status` | 設定檔是否存在 |
+| `GET` | `/api/config/status` | 設定檔是否存在；另回 `demo_mode` |
 | `PUT` | `/api/config` | 存設定 |
 | `GET` | `/api/session` | 目前勾選與步驟 |
 | `PUT` | `/api/session` | 更新勾選／步驟。可傳 `ids`、`selectedIds`、`currentStep`、`reachedStep`、`listed`、`restoreListed` |

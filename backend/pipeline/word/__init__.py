@@ -20,7 +20,7 @@ from backend.pipeline.word.blocks import (
 )
 from backend.pipeline.word.oxml import apply_global_yahei_font
 from backend.pipeline.word.toc import ensure_heading_number_space, refresh_toc
-from backend.utils.paths import DOCX_DIR, TEMPLATE_PATH
+from backend.utils.paths import DOCX_DIR, DEMO_TEMPLATE_PATH, TEMPLATE_PATH
 from backend.utils.pipeline_io import log, log_stage, log_stage_done, normalize_ids, read_pipeline_json, run_pipeline_main, write_pipeline_json
 from backend.utils.report_schema import find_report
 
@@ -113,8 +113,17 @@ def collect_reports(work_item_ids: list[int]) -> list[dict[str, Any]]:
 def run_word(work_item_ids: list[int]) -> list[str]:
     DOCX_DIR.mkdir(parents=True, exist_ok=True)
     log_stage(f"5/5 WORD  產出 Word（{len(work_item_ids)} 筆）")
-    if not TEMPLATE_PATH.exists():
-        raise FileNotFoundError(f"找不到範本：{TEMPLATE_PATH}")
+    from backend.utils.config_io import is_demo_mode
+
+    template = TEMPLATE_PATH
+    if is_demo_mode():
+        from backend.demo import ensure_demo_assets
+
+        ensure_demo_assets()
+        template = DEMO_TEMPLATE_PATH
+        log("展示模式：使用虛構 Word 範本")
+    if not template.exists():
+        raise FileNotFoundError(f"找不到範本：{template}")
 
     reports = collect_reports(work_item_ids)
     if not reports:
@@ -124,7 +133,7 @@ def run_word(work_item_ids: list[int]) -> list[str]:
         log(f"  區塊：ADO {label}")
 
     path = output_path()
-    doc = open_docx(TEMPLATE_PATH)
+    doc = open_docx(template)
     fill_document(doc, reports)
     save_docx(doc, path)
     log(f"已寫入：{path}")

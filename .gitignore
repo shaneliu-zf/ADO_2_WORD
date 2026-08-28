@@ -5,6 +5,10 @@ backend/secrets/config.json
 .DS_Store
 **/.DS_Store
 
+# 展示模式產出（執行時產生，勿提交）
+backend/demo/template.docx
+backend/demo/files/
+
 # 輸出與快取
 backend/output/
 __pycache__/

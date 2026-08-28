@@ -64,6 +64,12 @@ def fetch_work_item(
     authorization: str,
     work_item_id: int,
 ) -> dict[str, Any]:
+    from backend.utils.config_io import is_demo_mode
+
+    if is_demo_mode(config):
+        from backend.demo import work_item_payload
+
+        return work_item_payload(work_item_id)
     url = api_url(
         config,
         "wit/workitems",
@@ -78,6 +84,12 @@ def fetch_comments(
     authorization: str,
     work_item_id: int,
 ) -> list[dict[str, Any]]:
+    from backend.utils.config_io import is_demo_mode
+
+    if is_demo_mode(config):
+        from backend.demo import comments_payload
+
+        return comments_payload(work_item_id)
     comments: list[dict[str, Any]] = []
     continuation: str | None = None
     while True:
@@ -109,6 +121,12 @@ def fetch_updates(
     work_item_id: int,
 ) -> list[dict[str, Any]]:
     """抓取 Work Item 每次更新的差異（指派、狀態等）。"""
+    from backend.utils.config_io import is_demo_mode
+
+    if is_demo_mode(config):
+        from backend.demo import updates_payload
+
+        return updates_payload(work_item_id)
     updates: list[dict[str, Any]] = []
     skip = 0
     while True:
@@ -141,6 +159,12 @@ def fetch_git_commit(
     *,
     project: str | None = None,
 ) -> dict[str, Any]:
+    from backend.utils.config_io import is_demo_mode
+
+    if is_demo_mode(config):
+        from backend.demo import git_commit_payload
+
+        return git_commit_payload(repository_id, commit_id)
     git_config = config if not project else {**config, "project": project}
     url = api_url(
         git_config,
@@ -161,6 +185,12 @@ def fetch_work_items_batch(
 ) -> list[dict[str, Any]]:
     if not work_item_ids:
         return []
+    from backend.utils.config_io import is_demo_mode
+
+    if is_demo_mode(config):
+        from backend.demo import summaries
+
+        return summaries(work_item_ids)
     url = api_url(config, "wit/workitemsbatch", query={"api-version": WIT_API})
     payload = request_json(
         url,

@@ -81,6 +81,13 @@ def safe_filename(url: str, index: int) -> str:
 
 
 def download_file(url: str, dest: Path, authorization: str) -> None:
+    from backend.utils.config_io import is_demo_mode
+
+    if is_demo_mode():
+        from backend.demo import copy_attachment
+
+        copy_attachment(url, dest)
+        return
     req = urllib.request.Request(url, headers={"Authorization": authorization})
     with urllib.request.urlopen(req, timeout=60) as resp:
         dest.write_bytes(resp.read())
@@ -310,7 +317,14 @@ def fetch_one_work_item(
 
 def run_fetch(work_item_ids: list[int], *, no_images: bool = False) -> list[int]:
     config = load_config()
+    from backend.utils.config_io import is_demo_mode
+
     log_stage(f"2/5 FETCH  抓取 ADO JSON（{len(work_item_ids)} 筆）")
+    if is_demo_mode(config):
+        from backend.demo import ensure_demo_assets
+
+        ensure_demo_assets()
+        log("展示模式：不連 Azure DevOps，使用虛構 Work Item")
     authorization = auth_header(config["pat"])
     fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     results_by_id: dict[int, dict[str, Any]] = {}

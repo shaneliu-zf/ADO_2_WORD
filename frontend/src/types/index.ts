@@ -51,6 +51,12 @@ export interface AppConfig {
   pat: string
   ado_base_url: string
   bob_api_key: string
+  demo_mode: boolean
+}
+
+export interface ConfigStatus {
+  exists: boolean
+  demo_mode: boolean
 }
 
 export interface PipelineSession {

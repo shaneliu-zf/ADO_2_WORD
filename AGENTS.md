@@ -29,7 +29,7 @@
 
 - 改功能先看現有程式，不要假設文件裡有完整規格。
 - 使用者已刪的說明、欄位、功能，不要補回。
-- `backend/secrets/config.json` 本機專用、勿提交。
+- `backend/secrets/config.json` 本機專用、勿提交。可設 `demo_mode: true` 改走虛構 ADO／展示範本。
 - 能小改就小改。不要順手大重構。
 
 ---

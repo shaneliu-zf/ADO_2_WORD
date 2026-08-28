@@ -23,6 +23,14 @@ LIST_BATCH_WORKERS = 8
 
 
 def query_work_item_ids(config: dict[str, Any], authorization: str) -> list[int]:
+    from backend.utils.config_io import is_demo_mode
+
+    if is_demo_mode(config):
+        from backend.demo import all_ids
+
+        ids = all_ids()
+        log(f"展示模式：共 {len(ids)} 筆虛構 ID")
+        return ids
     ids: list[int] = []
     last_id = 0
 

@@ -7,6 +7,7 @@
             <img src="/Eye Bee M.svg" alt="IBM" class="toolbar-logo" />
           </a>
           <div class="toolbar-actions">
+            <span v-if="demoMode" class="demo-badge">展示模式</span>
             <Button
               label="載入 ID"
               icon="pi pi-download"
@@ -84,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
@@ -117,6 +118,8 @@ const detailMode = ref<'ado' | 'report'>('ado')
 const configVisible = ref(false)
 const configMissing = ref(false)
 const importVisible = ref(false)
+const demoMode = ref(false)
+provide('demoMode', demoMode)
 
 const canKeepOnlySelected = computed(() => {
   if (pipelineStore.isRunning) return false
@@ -145,8 +148,10 @@ async function checkSetup() {
     if (!status.exists) {
       configMissing.value = true
       configVisible.value = true
+      demoMode.value = false
       return
     }
+    demoMode.value = !!status.demo_mode
   } catch {
     // 設定狀態讀不到時仍繼續後面的空清單提示
   }
@@ -155,14 +160,16 @@ async function checkSetup() {
 
 function onConfigSaved() {
   configMissing.value = false
-  promptIfEmpty()
+  void checkSetup()
 }
 
 function promptIfEmpty() {
   if (itemsStore.items.length > 0 || pipelineStore.isRunning) return
   confirm.require({
     header: '目前沒有資料',
-    message: '發現目前沒有資料，是否需要從 ADO 取得 ID 跟 Title',
+    message: demoMode.value
+      ? '目前為展示模式且沒有資料，是否載入虛構的 ID 與標題？'
+      : '發現目前沒有資料，是否需要從 ADO 取得 ID 跟 Title',
     icon: 'pi pi-inbox',
     rejectProps: { label: '不用', severity: 'secondary', outlined: true },
     acceptProps: { label: '取得' },
@@ -269,6 +276,18 @@ onMounted(refresh)
   gap: 0.6rem;
   margin-left: 1rem;
   flex: 1;
+}
+
+.demo-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #0043ce;
+  background: #d0e2ff;
 }
 
 .toolbar-logo-link {

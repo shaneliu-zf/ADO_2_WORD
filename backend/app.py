@@ -20,7 +20,7 @@ from backend.items import (
     set_listed_from_ids,
 )
 from backend.pipeline_job import abort, allowed_scripts, is_running, resolve_script, start_sse
-from backend.utils.config_io import read_config_file, save_config
+from backend.utils.config_io import is_demo_mode, read_config_file, save_config
 from backend.utils.json_io import write_json
 from backend.utils.paths import ADO_DIR, CONFIG_PATH, DOCS_DIR, JSON_DIR, STYLE_PATH, report_json_path
 from backend.utils.report_schema import find_report, locate_report, validate_report
@@ -63,7 +63,7 @@ def get_config():
 
 @app.get("/api/config/status")
 def get_config_status():
-    return jsonify({"exists": CONFIG_PATH.exists()})
+    return jsonify({"exists": CONFIG_PATH.exists(), "demo_mode": is_demo_mode()})
 
 
 @app.put("/api/config")
@@ -229,8 +229,10 @@ def regenerate_item_report(item_id: int):
     try:
         from backend.pipeline.report_by_llm import process_group
         from backend.utils.bob_llm import load_bob_config
+        from backend.utils.config_io import is_demo_mode
 
-        process_group(group, load_bob_config())
+        config = {} if is_demo_mode() else load_bob_config()
+        process_group(group, config)
         report = find_report(item_id)
         if report is None:
             return _json_error(FileNotFoundError("重新產生後仍找不到報告。"), 500)

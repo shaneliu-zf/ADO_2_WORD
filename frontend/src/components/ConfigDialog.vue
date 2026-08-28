@@ -17,39 +17,49 @@
       <span>載入中…</span>
     </div>
     <div v-else class="form">
-      <p v-if="required" class="hint">找不到 backend/secrets/config.json，請填寫後儲存。</p>
+      <p v-if="required" class="hint">找不到 backend/secrets/config.json。要對外展示可只開展示模式後儲存；連客戶環境則請填 ADO 與 Bob。</p>
       <div class="field">
-        <label for="cfg-org">ADO 組織</label>
-        <InputText id="cfg-org" v-model="form.organization" class="w-full" />
+        <label for="cfg-demo">展示模式</label>
+        <div class="demo-row">
+          <ToggleSwitch inputId="cfg-demo" v-model="form.demo_mode" />
+          <span class="demo-help">用虛構的 ADO 與 Word 範本，不連客戶 Azure DevOps，產生報告也不呼叫 Bob。</span>
+        </div>
       </div>
-      <div class="field">
-        <label for="cfg-project">ADO 專案</label>
-        <InputText id="cfg-project" v-model="form.project" class="w-full" />
-      </div>
-      <div class="field">
-        <label for="cfg-pat">ADO Personal Access Token</label>
-        <Password
-          id="cfg-pat"
-          v-model="form.pat"
-          class="secret-input"
-          inputClass="secret-field"
-          fluid
-          toggleMask
-          :feedback="false"
-        />
-      </div>
-      <div class="field">
-        <label for="cfg-bob">IBM Bob API Key</label>
-        <Password
-          id="cfg-bob"
-          v-model="form.bob_api_key"
-          class="secret-input"
-          inputClass="secret-field"
-          fluid
-          toggleMask
-          :feedback="false"
-        />
-      </div>
+      <template v-if="!form.demo_mode">
+        <div class="field">
+          <label for="cfg-org">ADO 組織</label>
+          <InputText id="cfg-org" v-model="form.organization" class="w-full" />
+        </div>
+        <div class="field">
+          <label for="cfg-project">ADO 專案</label>
+          <InputText id="cfg-project" v-model="form.project" class="w-full" />
+        </div>
+        <div class="field">
+          <label for="cfg-pat">ADO Personal Access Token</label>
+          <Password
+            id="cfg-pat"
+            v-model="form.pat"
+            class="secret-input"
+            inputClass="secret-field"
+            fluid
+            toggleMask
+            :feedback="false"
+          />
+        </div>
+        <div class="field">
+          <label for="cfg-bob">IBM Bob API Key</label>
+          <Password
+            id="cfg-bob"
+            v-model="form.bob_api_key"
+            class="secret-input"
+            inputClass="secret-field"
+            fluid
+            toggleMask
+            :feedback="false"
+          />
+        </div>
+      </template>
+      <p v-else class="hint">展示專案為虛構的 LumenWMS（倉儲系統）。請重新「載入 ID」後再跑流程，清單才會換成假資料。</p>
       <p v-if="error" class="error">{{ error }}</p>
     </div>
     <template #footer>
@@ -66,6 +76,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import ProgressSpinner from 'primevue/progressspinner'
+import ToggleSwitch from 'primevue/toggleswitch'
 import { useToast } from 'primevue/usetoast'
 import { fetchConfig, updateConfig } from '@/api/client'
 import { errorMessage } from '@/utils/apiError'
@@ -88,6 +99,7 @@ const form = reactive<AppConfig>({
   pat: '',
   ado_base_url: 'https://dev.azure.com',
   bob_api_key: '',
+  demo_mode: false,
 })
 
 function applyForm(data: AppConfig) {
@@ -96,6 +108,7 @@ function applyForm(data: AppConfig) {
   form.pat = data.pat || ''
   form.ado_base_url = data.ado_base_url || 'https://dev.azure.com'
   form.bob_api_key = data.bob_api_key || ''
+  form.demo_mode = !!data.demo_mode
 }
 
 async function loadConfig() {
@@ -137,6 +150,18 @@ async function handleSave() {
   margin: 0;
   font-size: 0.88rem;
   line-height: 1.5;
+  color: var(--p-text-secondary-color);
+}
+
+.demo-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.demo-help {
+  font-size: 0.88rem;
+  line-height: 1.45;
   color: var(--p-text-secondary-color);
 }
 

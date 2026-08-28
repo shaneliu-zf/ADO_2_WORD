@@ -45,6 +45,8 @@ chmod +x start-mac.command
 
 存檔即可。這些資料只存在你電腦上的 `backend/secrets/config.json`，不要提交到 git。
 
+對外展示時，設定裡可開 **展示模式**：不連客戶 Azure DevOps、不用客戶 Word 範本、也不呼叫 Bob。會改用虛構專案 LumenWMS（約 12 筆，ID 8401–8480）與程式產生的展示範本。開了之後請重新「載入 ID」。
+
 ### 4. 產出 Word
 
 1. 按左上角「載入 ID」，貼上 Issue 編號；也可按「填入全部 ID」再載入。

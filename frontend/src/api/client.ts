@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AdoItem, AppConfig, Report, Group, PipelineSession } from '@/types'
+import type { AdoItem, AppConfig, ConfigStatus, Report, Group, PipelineSession } from '@/types'
 import { errorMessage } from '@/utils/apiError'
 
 const http = axios.create({ baseURL: '/' })
@@ -21,8 +21,8 @@ export function fetchConfig(): Promise<AppConfig> {
   return http.get<AppConfig>('/api/config').then(r => r.data)
 }
 
-export function fetchConfigStatus(): Promise<{ exists: boolean }> {
-  return http.get<{ exists: boolean }>('/api/config/status').then(r => r.data)
+export function fetchConfigStatus(): Promise<ConfigStatus> {
+  return http.get<ConfigStatus>('/api/config/status').then(r => r.data)
 }
 
 export function updateConfig(body: AppConfig): Promise<AppConfig> {

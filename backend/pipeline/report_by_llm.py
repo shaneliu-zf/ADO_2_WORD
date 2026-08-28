@@ -381,19 +381,27 @@ def build_report(
 def process_group(work_item_ids: list[int], config: dict[str, Any]) -> Path:
     items = [read_work_item(work_item_id) for work_item_id in work_item_ids]
     metas = [extract_meta(item) for item in items]
-    user_content = build_group_llm_input(items, metas)
-    last_err: Exception | None = None
-    for attempt in range(3):
-        if attempt:
-            log(f"  [retry {attempt}] ADO #{', '.join(str(i) for i in work_item_ids)} 重新呼叫 LLM …")
-        try:
-            llm_data = call_test_extract(config, user_content)
-            last_err = None
-            break
-        except (ValueError, json.JSONDecodeError) as exc:
-            last_err = exc
-    if last_err is not None:
-        raise last_err
+    from backend.utils.config_io import is_demo_mode
+
+    if is_demo_mode():
+        from backend.demo import demo_extract_for
+
+        log("  展示模式：使用預先準備的報告內容，不呼叫 Bob")
+        llm_data = demo_extract_for(work_item_ids, items)
+    else:
+        user_content = build_group_llm_input(items, metas)
+        last_err: Exception | None = None
+        for attempt in range(3):
+            if attempt:
+                log(f"  [retry {attempt}] ADO #{', '.join(str(i) for i in work_item_ids)} 重新呼叫 LLM …")
+            try:
+                llm_data = call_test_extract(config, user_content)
+                last_err = None
+                break
+            except (ValueError, json.JSONDecodeError) as exc:
+                last_err = exc
+        if last_err is not None:
+            raise last_err
     report = validate_report(build_report(items, metas, llm_data), source=f"work_item_{min(work_item_ids)}")
 
     primary_id = min(work_item_ids)
@@ -407,10 +415,18 @@ def process_group(work_item_ids: list[int], config: dict[str, Any]) -> Path:
 
 
 def run_report_by_llm(groups: list[list[int]], config: dict[str, Any] | None = None) -> list[list[int]]:
-    cfg = load_bob_config(config)
-    log_stage("4/5 REPORT  Bob 產出報告 JSON")
+    from backend.utils.config_io import is_demo_mode
+
+    demo = is_demo_mode(config) if config is not None else is_demo_mode()
+    if demo:
+        cfg: dict[str, Any] = config or {}
+        log_stage("4/5 REPORT  展示模式產出報告 JSON")
+        log("展示模式：不呼叫 Bob")
+    else:
+        cfg = load_bob_config(config)
+        log_stage("4/5 REPORT  Bob 產出報告 JSON")
+        log(f"Bob model：{BOB_MODEL}")
     JSON_DIR.mkdir(parents=True, exist_ok=True)
-    log(f"Bob model：{BOB_MODEL}")
     log(f"共 {len(groups)} 組，開始處理 …")
     worker_count = min(REPORT_WORKERS, max(1, len(groups)))
     log(f"使用 {worker_count} 個 worker 平行產生 JSON …")

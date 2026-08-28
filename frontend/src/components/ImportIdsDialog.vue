@@ -6,8 +6,20 @@
     :style="{ width: '36rem' }"
     @show="fillFromCurrent"
   >
-    <p class="import-lead">會透過輸入的 ID 去 ADO 撈取 Type、State、Title。</p>
-    <p class="import-hint">可貼上 ID，例如 841, 842, 845；或按「填入全部 ID」取得全部 ID。</p>
+    <p class="import-lead">
+      {{
+        demoMode
+          ? '展示模式會載入虛構專案 LumenWMS 的 Type、State、Title，不會連到 Azure DevOps。'
+          : '會透過輸入的 ID 去 ADO 撈取 Type、State、Title。'
+      }}
+    </p>
+    <p class="import-hint">
+      {{
+        demoMode
+          ? '可按「填入全部 ID」取得 8401–8480，或自行貼上其中的編號。'
+          : '可貼上 ID，例如 841, 842, 845；或按「填入全部 ID」取得全部 ID。'
+      }}
+    </p>
     <Textarea
       v-model="importText"
       class="import-box"
@@ -42,7 +54,7 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Textarea from 'primevue/textarea'
 import { useToast } from 'primevue/usetoast'
-import { fetchAdoIds, loadItemSummaries } from '@/api/client'
+import { fetchAdoIds, fetchConfigStatus, loadItemSummaries } from '@/api/client'
 import { useItemsStore } from '@/stores/items'
 import { usePipelineStore } from '@/stores/pipeline'
 import { errorMessage } from '@/utils/apiError'
@@ -57,10 +69,17 @@ const importText = ref('')
 const importError = ref('')
 const importing = ref(false)
 const listing = ref(false)
+const demoMode = ref(false)
 
-function fillFromCurrent() {
+async function fillFromCurrent() {
   importError.value = ''
   importText.value = itemsStore.items.map(item => item.id).join(', ')
+  try {
+    const status = await fetchConfigStatus()
+    demoMode.value = !!status.demo_mode
+  } catch {
+    demoMode.value = false
+  }
 }
 
 async function importIds() {
